@@ -21,14 +21,8 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const HOLD_MS = 1100;
-  const [pressingDate, setPressingDate] = useState<string | null>(null);
-  const [longPressDate, setLongPressDate] = useState<string | null>(null);
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
-  const longPressTimer = useRef<number | null>(null);
-  const activePressDate = useRef<string | null>(null);
-  const longPressFired = useRef(false);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -38,34 +32,6 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
 
   const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
   const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
-  const clearLongPressTimer = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-  const handlePointerDown = (dateStr: string) => {
-    setPressingDate(dateStr);
-    activePressDate.current = dateStr;
-    longPressFired.current = false;
-    clearLongPressTimer();
-    longPressTimer.current = window.setTimeout(() => {
-      setLongPressDate(dateStr);
-      longPressFired.current = true;
-      onDateClick(dateStr);
-    }, HOLD_MS);
-  };
-  const handlePointerUp = (dateStr?: string) => {
-    const targetDate = dateStr ?? activePressDate.current;
-    const wasLongPressed = longPressFired.current;
-    clearLongPressTimer();
-    setPressingDate(null);
-    setLongPressDate(null);
-    activePressDate.current = null;
-    if (!wasLongPressed && targetDate) {
-      onDateClick(targetDate);
-    }
-  };
   
   const jumpToDate = () => {
     setViewDate(new Date(selectedYear, selectedMonth - 1, 1));
@@ -97,9 +63,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
     days.push(
       <button
         key={dateStr}
-        onPointerDown={() => handlePointerDown(dateStr)}
-        onPointerUp={() => handlePointerUp(dateStr)}
-        onPointerLeave={() => handlePointerUp(dateStr)}
+        onClick={() => onDateClick(dateStr)}
         className={`h-24 border-t border-l border-green-50/50 dark:border-slate-800/50 relative flex flex-col items-center justify-between py-2 overflow-hidden hover:bg-white/50 dark:hover:bg-slate-800/50 transition-all duration-300 ${
           isToday ? 'bg-yellow-50/30 dark:bg-yellow-900/10' : ''
         } ${hasRecords ? 'hover:scale-[1.02] active:scale-[0.98]' : ''} ${showDatePicker ? 'pointer-events-none' : ''}`}
@@ -109,16 +73,10 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
         </span>
         
         <div className="flex-1 flex flex-col items-center justify-center w-full relative">
-          {hasRecords ? (
+          {hasRecords && (
             <div className={`flex flex-col items-center justify-center min-h-[40px] transition-all duration-500 ${hasRecords ? 'drop-shadow-[0_0_8px_rgba(76,175,80,0.3)] dark:drop-shadow-[0_0_8px_rgba(74,222,128,0.2)]' : ''}`}>
               <div className="relative flex items-center justify-center">
-                {pressingDate === dateStr && (
-                  <svg className="absolute -inset-1 w-12 h-12" viewBox="0 0 44 44" role="presentation" style={{ '--hold-duration': '1100ms' } as any}>
-                    <circle className="hold-ring-bg" cx="22" cy="22" r="20" />
-                    <circle className="hold-ring-fg" cx="22" cy="22" r="20" />
-                  </svg>
-                )}
-                <span className={`text-2xl leading-none block transform-gpu ${isAnimating ? 'animate-stamp' : ''} ${pressingDate === dateStr ? 'animate-stamp-press' : ''} ${longPressDate === dateStr ? 'animate-stamp-long' : ''}`} style={{ willChange: 'transform' }}>
+                <span className={`text-2xl leading-none block transform-gpu ${isAnimating ? 'animate-stamp' : ''}`} style={{ willChange: 'transform' }}>
                   🦌
                 </span>
               </div>
@@ -138,18 +96,6 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
                 </div>
               )}
             </div>
-          ) : (
-            <div className="flex items-center justify-center min-h-[40px] relative">
-              {pressingDate === dateStr && (
-                <>
-                  <svg className="absolute -inset-1 w-12 h-12" viewBox="0 0 44 44" role="presentation" style={{ '--hold-duration': '1100ms' } as any}>
-                    <circle className="hold-ring-bg" cx="22" cy="22" r="20" />
-                    <circle className="hold-ring-fg" cx="22" cy="22" r="20" />
-                  </svg>
-                  <span className="text-2xl opacity-30 dark:opacity-20 animate-stamp-press">🦌</span>
-                </>
-              )}
-            </div>
           )}
         </div>
         
@@ -162,30 +108,6 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
 
         return (
           <div className={`bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm m-4 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden mb-32`}>
-            <style>{`
-              @keyframes stampPress {
-                0% { transform: scale(1); }
-                45% { transform: scale(0.9); }
-                100% { transform: scale(1.04); }
-              }
-              @keyframes stampLong {
-                0% { transform: translateZ(0) scale(1); }
-                45% { transform: translateZ(0) scale(1.10); }
-                100% { transform: translateZ(0) scale(1.02); }
-              }
-              @keyframes holdProgress {
-                0% { stroke-dashoffset: 126; }
-                100% { stroke-dashoffset: 0; }
-              }
-              .animate-stamp-press { animation: stampPress 220ms cubic-bezier(0.33, 1, 0.68, 1) forwards; }
-              .animate-stamp-long { animation: stampLong 500ms cubic-bezier(0.25, 0.8, 0.4, 1) forwards; }
-              .hold-ring-bg { fill: none; stroke: rgba(16,185,129,0.1); stroke-width: 4; }
-              .hold-ring-fg { fill: none; stroke: rgba(16,185,129,0.95); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 126; stroke-dashoffset: 126; animation: holdProgress var(--hold-duration, 1100ms) cubic-bezier(0.22, 0.7, 0.35, 1) forwards; }
-              @media (prefers-reduced-motion: reduce) {
-                .animate-stamp-press, .animate-stamp-long { animation-duration: 1ms; }
-                .hold-ring-fg { animation-duration: 1ms; }
-              }
-            `}</style>
       
       <div className="flex justify-between items-center p-5 bg-green-50/50 dark:bg-slate-800/50 border-b border-green-100 dark:border-slate-800">
         <button 
