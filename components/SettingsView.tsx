@@ -376,7 +376,7 @@ const SettingsView: React.FC<Props> = ({
 
         <div className="bg-green-900/5 dark:bg-green-400/5 rounded-3xl p-6 text-center">
           <h4 className="font-bold text-green-900 dark:text-green-400 mb-1">关于鹿了么</h4>
-          <p className="text-xs text-green-800/60 dark:text-green-400/40 mb-4">版本 1.4.2</p>
+          <p className="text-xs text-green-800/60 dark:text-green-400/40 mb-4">版本 1.4.4</p>
           <p className="text-xs text-green-800/80 dark:text-green-400/60 leading-relaxed italic px-4">
             "隐私是我们的最高准则。您的数据永远只会留在您的手机上。"
           </p>
