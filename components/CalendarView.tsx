@@ -109,7 +109,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
         </span>
         
         <div className="flex-1 flex flex-col items-center justify-center w-full relative">
-          {hasRecords && (
+          {hasRecords ? (
             <div className={`flex flex-col items-center justify-center min-h-[40px] transition-all duration-500 ${hasRecords ? 'drop-shadow-[0_0_8px_rgba(76,175,80,0.3)] dark:drop-shadow-[0_0_8px_rgba(74,222,128,0.2)]' : ''}`}>
               <div className="relative flex items-center justify-center">
                 {pressingDate === dateStr && (
@@ -136,6 +136,18 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
                   <div className="animate-particle absolute w-1.5 h-1.5 bg-yellow-400 rounded-full" style={{ '--tw-translate-x': '0px', '--tw-translate-y': '-20px' } as any}></div>
                   <div className="animate-particle absolute w-1 h-1 bg-green-500 rounded-full" style={{ '--tw-translate-x': '-12px', '--tw-translate-y': '5px' } as any}></div>
                 </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center min-h-[40px] relative">
+              {pressingDate === dateStr && (
+                <>
+                  <svg className="absolute -inset-1 w-12 h-12" viewBox="0 0 44 44" role="presentation" style={{ '--hold-duration': '1100ms' } as any}>
+                    <circle className="hold-ring-bg" cx="22" cy="22" r="20" />
+                    <circle className="hold-ring-fg" cx="22" cy="22" r="20" />
+                  </svg>
+                  <span className="text-2xl opacity-30 dark:opacity-20 animate-stamp-press">🦌</span>
+                </>
               )}
             </div>
           )}
