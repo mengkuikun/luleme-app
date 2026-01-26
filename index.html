@@ -1,0 +1,244 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鹿了么 - 记录你的小秘密</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Zhi+Mang+Xing&display=swap');
+        
+        /* Dark mode smooth transition - enhanced iOS-like curve with easing */
+        * {
+            transition: background-color 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                        border-color 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                        color 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                        box-shadow 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        
+        /* Disable transitions for animation elements */
+        .animate-stamp,
+        .animate-counter-pop,
+        .ripple-effect,
+        .active-ripple,
+        .progress-ring__circle,
+        [class*="animate-"] {
+            transition: none !important;
+        }
+        
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #F1F8E9;
+            overscroll-behavior: none;
+            overflow: hidden;
+        }
+        .dark body {
+            background-color: #0a0f0b;
+        }
+
+        /* --- Global Scrollbar Optimization --- */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(76, 175, 80, 0.2) transparent;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px; /* Slimmer */
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(76, 175, 80, 0.2);
+            border-radius: 10px;
+            transition: background 0.3s ease;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: rgba(74, 222, 128, 0.1);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(76, 175, 80, 0.4);
+        }
+        
+        /* Specific container fixes */
+        .custom-scroll {
+            scrollbar-gutter: stable;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .handwriting {
+            font-family: 'Zhi Mang Xing', cursive;
+        }
+        .forest-bg {
+            background-image: linear-gradient(rgba(241, 248, 233, 0.9), rgba(241, 248, 233, 0.8)), url('https://picsum.photos/id/10/800/1200');
+            background-size: cover;
+            background-attachment: fixed;
+        }
+        .dark .forest-bg {
+            background-image: linear-gradient(rgba(10, 15, 11, 0.95), rgba(13, 22, 15, 0.9)), url('https://picsum.photos/id/10/800/1200');
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+        }
+        @keyframes stamp-drop {
+            0% { transform: translateY(-100px) scale(2); opacity: 0; }
+            70% { transform: translateY(0) scale(1); opacity: 1; }
+            85% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }
+        .animate-stamp {
+            animation: stamp-drop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes counter-pop {
+            0% { transform: scale(1) rotate(-5deg); }
+            40% { transform: scale(1.6) rotate(10deg); color: #ef4444; }
+            100% { transform: scale(1) rotate(-5deg); }
+        }
+        .animate-counter-pop {
+            animation: counter-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        
+        .punch-btn-container {
+            position: relative;
+            width: 160px;
+            height: 160px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 1000px;
+        }
+
+        @keyframes bg-glow {
+            0%, 100% { opacity: 0.2; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.2); }
+        }
+
+        @keyframes inner-breathe {
+            0%, 100% { transform: scale(1); filter: brightness(1); }
+            50% { transform: scale(1.05); filter: brightness(1.1) drop-shadow(0 0 10px rgba(76, 175, 80, 0.3)); }
+        }
+
+        @keyframes ripple-burst {
+            0% { transform: scale(0.8); opacity: 1; border-width: 4px; }
+            100% { transform: scale(2.2); opacity: 0; border-width: 1px; }
+        }
+        
+        .button-bg-circle {
+            position: absolute;
+            width: 125px;
+            height: 125px;
+            background: #ffffff;
+            border-radius: 50%;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: 0 12px 40px rgba(76, 175, 80, 0.25);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform-style: preserve-3d;
+        }
+        .dark .button-bg-circle {
+            background: #1e293b;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+        
+        .ripple-effect {
+            position: absolute;
+            width: 140px;
+            height: 140px;
+            background: radial-gradient(circle, rgba(76, 175, 80, 0.35) 0%, transparent 70%);
+            border-radius: 50%;
+            animation: bg-glow 3s infinite ease-in-out;
+            z-index: 1;
+        }
+
+        .active-ripple {
+            position: absolute;
+            inset: 0;
+            border: 2px solid rgba(76, 175, 80, 0.5);
+            border-radius: 50%;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .punch-btn-container:active .active-ripple {
+            animation: ripple-burst 0.6s ease-out forwards;
+        }
+
+        .deer-icon-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            animation: inner-breathe 4s infinite ease-in-out;
+            display: block;
+            transition: transform 0.3s ease;
+        }
+
+        .dark .deer-icon-img {
+            filter: brightness(0.95) contrast(1.1);
+        }
+
+        .punch-btn-container:hover .button-bg-circle {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 15px 45px rgba(76, 175, 80, 0.35);
+        }
+        
+        .punch-btn-container:active .button-bg-circle {
+            transform: translateY(2px) scale(0.9) rotateX(15deg) rotateY(-10deg);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.1);
+            transition: transform 0.1s ease-out;
+        }
+
+        /* Long Press Ring Progress */
+        .progress-ring {
+          pointer-events: none;
+          z-index: 10;
+        }
+        .progress-ring__circle {
+          transition: stroke-dashoffset 0.05s linear;
+          transform: rotate(-90deg);
+          transform-origin: 50% 50%;
+        }
+
+        /* Toast notifications */
+        @keyframes toast-in {
+          0% { transform: translateY(100%) translateX(-50%); opacity: 0; }
+          100% { transform: translateY(0) translateX(-50%); opacity: 1; }
+        }
+        .toast-animate {
+          animation: toast-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "recharts": "https://esm.sh/recharts@^3.6.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>
