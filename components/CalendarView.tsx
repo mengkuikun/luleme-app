@@ -1,28 +1,26 @@
-
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { RecordEntry } from '../types';
-
-// 获取本地日期字符串 (YYYY-MM-DD)，避免 UTC 时区问题
-const getLocalDateString = (date: Date = new Date()): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+import { getLocalDateString } from '../constants';
 
 interface Props {
   records: RecordEntry[];
   onDateClick: (date: string) => void;
   stampAnimationDate: string | null;
+  onDatePickerOpenChange?: (open: boolean) => void;
 }
 
-const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDate }) => {
+const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDate, onDatePickerOpenChange }) => {
   const [viewDate, setViewDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+
+  const setDatePickerOpen = (open: boolean) => {
+    setShowDatePicker(open);
+    onDatePickerOpenChange?.(open);
+  };
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -35,7 +33,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
   
   const jumpToDate = () => {
     setViewDate(new Date(selectedYear, selectedMonth - 1, 1));
-    setShowDatePicker(false);
+    setDatePickerOpen(false);
   };
   
   const openDatePicker = () => {
@@ -43,7 +41,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
     setSelectedMonth(month + 1);
     setShowYearPicker(false);
     setShowMonthPicker(false);
-    setShowDatePicker(true);
+    setDatePickerOpen(true);
   };
 
   const days = [];
@@ -144,7 +142,9 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
             background: 'rgba(0, 0, 0, 0)',
             animation: 'fadeInBackdrop 0.3s ease-out forwards'
           }}
-          onClick={() => { setShowDatePicker(false); }}
+          onClick={() => { setDatePickerOpen(false); }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
         >
           <style>{`
             @keyframes fadeInBackdrop {
@@ -300,7 +300,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
               <button 
                 onClick={() => {
                   setViewDate(new Date());
-                  setShowDatePicker(false);
+                  setDatePickerOpen(false);
                 }}
                 className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/30 transition-all duration-300 active:scale-95 hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/40 relative overflow-hidden group"
               >
@@ -311,7 +311,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)' }}></div>
               </button>
               <button 
-                onClick={() => { setShowDatePicker(false); }}
+                onClick={() => { setDatePickerOpen(false); }}
                 className="w-full py-4 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 font-bold rounded-2xl transition-all duration-300 active:scale-95 hover:scale-[1.02] hover:bg-gray-200 dark:hover:bg-slate-700"
               >
                 取消

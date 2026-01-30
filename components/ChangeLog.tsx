@@ -8,6 +8,24 @@ interface Props {
 const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
   const changes = [
     {
+      version: '1.5.0',
+      date: '2026-01-30',
+      title: '统计热力图、PIN 安全与主题过渡',
+      items: [
+        '✨ 新增：统计页打卡热力图，支持按年/按月切换，六档图例（0～5+ 次）',
+        '✨ 新增：PIN 码设置时可选安全问题，忘记 PIN 时通过验证可查看 PIN 或重置',
+        '✨ 新增：设置页自定义背景图（上传图片或粘贴链接）',
+        '✨ 优化：暗黑模式切换改为整页逐渐过渡（0.5s linear），去除圆形遮罩',
+        '✨ 优化：选择日期弹窗内滑动年月列表时阻止误触左右滑动',
+        '✨ 优化：打开日期选择时打卡按钮逐渐缩小隐藏，关闭后逐渐显示',
+        '✨ 优化：长按打卡进度条改为 requestAnimationFrame 驱动，修复中途卡顿掉帧',
+        '✨ 优化：打卡图标与进度环动画采用线性、匀速，更符合大厂 UI 规范',
+        '✅ 修复：补录「今天」时记录时间错误（00:00:00）的问题',
+        '✅ 修复：DetailModal 列表排序不修改 props 原数组',
+        '✨ 优化：常量与 getLocalDateString 抽离至 constants，统一 PIN/导出 Key',
+      ]
+    },
+    {
       version: '1.4.4',
       date: '2026-01-27',
       title: '日历交互优化与UI改进',

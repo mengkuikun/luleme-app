@@ -1,6 +1,21 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ViewType, RecordEntry } from './types';
+import {
+  STORAGE_KEY,
+  PIN_KEY,
+  THEME_KEY,
+  ICON_KEY,
+  SOUND_KEY,
+  CUSTOM_SOUND_KEY,
+  AGE_VERIFIED_KEY,
+  LONG_PRESS_THRESHOLD,
+  LAST_EXPORT_FILE_KEY,
+  LAST_EXPORT_FILENAME_KEY,
+  SECURITY_QUESTION_KEY,
+  SECURITY_ANSWER_KEY,
+  CUSTOM_BACKGROUND_KEY,
+  getLocalDateString,
+} from './constants';
 import CalendarView from './components/CalendarView';
 import StatsView from './components/StatsView';
 import SettingsView from './components/SettingsView';
@@ -10,23 +25,6 @@ import LockScreen from './components/LockScreen';
 import ChangeLog from './components/ChangeLog';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-
-const STORAGE_KEY = 'lulemo_records';
-const PIN_KEY = 'lulemo_pin';
-const THEME_KEY = 'lulemo_darkmode';
-const ICON_KEY = 'lulemo_custom_icon';
-const SOUND_KEY = 'lulemo_sound_enabled';
-const CUSTOM_SOUND_KEY = 'lulemo_custom_sound_data';
-const AGE_VERIFIED_KEY = 'lulemo_age_verified';
-const LONG_PRESS_THRESHOLD = 600;
-
-// 获取本地日期字符串 (YYYY-MM-DD)，避免 UTC 时区问题
-const getLocalDateString = (date: Date = new Date()): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 const App: React.FC = () => {
   // 直接从 localStorage 初始化，避免闪屏
@@ -43,25 +41,26 @@ const App: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [customIcon, setCustomIcon] = useState<string | null>(null);
   const [customSound, setCustomSound] = useState<string | null>(null);
+  const [customBackground, setCustomBackground] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [currentPin, setCurrentPin] = useState<string | null>(null);
-  
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
   // Modals state
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showExportConfirm, setShowExportConfirm] = useState(false);
   const [showNoDataAlert, setShowNoDataAlert] = useState(false);
   const [showRemovePinConfirm, setShowRemovePinConfirm] = useState(false);
 
-  // Progress Ring State
-  const [pressProgress, setPressProgress] = useState(0);
-
-  // Refs for Long Press
+  // Refs for Long Press & Progress Ring (避免 setState 导致重绘卡顿，用 rAF + DOM 直接更新)
   const longPressTimer = useRef<number | null>(null);
-  const progressInterval = useRef<number | null>(null);
+  const progressAnimationRef = useRef<number | null>(null);
+  const progressRingCircleRef = useRef<SVGCircleElement>(null);
+  const startTimeRef = useRef<number>(0);
   const isLongPressActive = useRef(false);
   const isCurrentlyPressing = useRef(false);
   
@@ -113,6 +112,9 @@ const App: React.FC = () => {
       const savedSoundData = localStorage.getItem(CUSTOM_SOUND_KEY);
       if (savedSoundData) setCustomSound(savedSoundData);
 
+      const savedBg = localStorage.getItem(CUSTOM_BACKGROUND_KEY);
+      if (savedBg) setCustomBackground(savedBg);
+
       const savedSound = localStorage.getItem(SOUND_KEY);
       if (savedSound !== null) {
         setSoundEnabled(savedSound === 'true');
@@ -123,6 +125,11 @@ const App: React.FC = () => {
     }
     
     setIsInitialized(true);
+  }, []);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
   }, []);
 
   // Persist Data
@@ -137,47 +144,29 @@ const App: React.FC = () => {
         else localStorage.removeItem(ICON_KEY);
         if (customSound) localStorage.setItem(CUSTOM_SOUND_KEY, customSound);
         else localStorage.removeItem(CUSTOM_SOUND_KEY);
-      } catch (e: any) {
-        console.error('❌ localStorage write failed:', e);
-        if (e.name === 'QuotaExceededError') {
+        if (customBackground) localStorage.setItem(CUSTOM_BACKGROUND_KEY, customBackground);
+        else localStorage.removeItem(CUSTOM_BACKGROUND_KEY);
+      } catch (e: unknown) {
+        console.error('localStorage write failed:', e);
+        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
           showToast('存储空间已满，请清理数据');
         }
       }
     }
-  }, [records, darkMode, customIcon, customSound, soundEnabled, isInitialized, isClearing]);
+  }, [records, darkMode, customIcon, customSound, customBackground, soundEnabled, isInitialized, isClearing, showToast]);
 
   const playPunchSound = useCallback((force = false) => {
-    // 实时读取最新的状态值，避免闭包问题
     const currentSoundEnabled = localStorage.getItem(SOUND_KEY) === 'true';
     const currentCustomSound = localStorage.getItem(CUSTOM_SOUND_KEY);
-    
-    console.log('🔊 playPunchSound called:', { 
-      soundEnabled: currentSoundEnabled, 
-      force, 
-      customSound: !!currentCustomSound 
-    });
-    
-    // 检查音效是否启用
-    if (!currentSoundEnabled && !force) {
-      console.log('❌ Sound disabled, skipping');
-      return;
-    }
 
-    // 防止音频播放过于频繁
+    if (!currentSoundEnabled && !force) return;
+
     const now = Date.now();
-    if (now - lastPlayTime.current < minPlayIntervalMs) {
-      console.warn('⏩ Sound play too frequent, skipping');
-      return;
-    }
+    if (now - lastPlayTime.current < minPlayIntervalMs) return;
     lastPlayTime.current = now;
 
-    // 使用自定义音效
     if (currentCustomSound) {
-      console.log('🎵 Playing custom sound');
-      
-      // 如果自定义音效URL已改变，清除缓存并创建新的Audio对象
       if (cachedSoundUrl.current !== currentCustomSound) {
-        console.log('🔄 Custom sound changed, creating new Audio object');
         if (audioCache.current) {
           audioCache.current.pause();
           audioCache.current.currentTime = 0;
@@ -187,23 +176,19 @@ const App: React.FC = () => {
         audioCache.current.volume = 1;
         audioCache.current.onended = () => {
           isPlayingAudio.current = false;
-          console.log('✅ Custom audio finished');
         };
       }
-      
-      // 播放音效
+
       if (audioCache.current) {
         audioCache.current.currentTime = 0;
         isPlayingAudio.current = true;
-        audioCache.current.play()
-          .then(() => console.log('✅ Custom audio playing'))
-          .catch(e => console.error("❌ Custom audio play failed", e));
+        audioCache.current.play().catch(() => {
+          // 用户未交互或权限问题，静默失败
+        });
       }
       return;
     }
 
-    // 使用默认鹿鸣音效
-    console.log('🦌 Playing default deer sound');
     try {
       // 重用AudioContext而不是每次创建新的
       if (!audioContextRef.current) {
@@ -241,37 +226,28 @@ const App: React.FC = () => {
       
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.4);
-      
-      console.log('✅ Default sound started');
-      
-      // 标记音效播放结束时间
+
       setTimeout(() => {
         isPlayingOscillator.current = false;
       }, 400);
-    } catch(e) {
-      console.error("❌ Audio playback failed", e);
+    } catch (e) {
+      console.error('Audio playback failed', e);
     }
-  }, []); // 移除依赖，每次都从 localStorage 读取最新状态
-
-  const showToast = (message: string) => {
-    setToast(message);
-    setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
   const handleAgeConfirm = () => {
     localStorage.setItem(AGE_VERIFIED_KEY, 'true');
     setShowSplash(false);
   };
 
-  const addRecord = (dateStr?: string, mood?: string, note?: string) => {
+  const addRecord = useCallback((dateStr?: string, mood?: string, note?: string) => {
     const now = new Date();
     const targetDate = dateStr ? new Date(dateStr) : now;
-    if (dateStr && dateStr !== getLocalDateString(now)) {
-       targetDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+    if (dateStr) {
+      targetDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
     }
-    // 使用 timestamp + random 生成唯一ID，防止重复
     const newRecord: RecordEntry = {
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       timestamp: targetDate.getTime(),
       mood: mood || '放松',
       note,
@@ -280,40 +256,57 @@ const App: React.FC = () => {
     const formattedDate = getLocalDateString(targetDate);
     setStampAnimationDate(formattedDate);
     setTimeout(() => setStampAnimationDate(null), 1500);
-    
-    if (soundEnabled) {
-      playPunchSound();
-    }
-  };
+    playPunchSound();
+  }, [playPunchSound]);
+
+  const circumference = 78 * 2 * Math.PI;
 
   const clearTimers = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    if (progressInterval.current) {
-      clearInterval(progressInterval.current);
-      progressInterval.current = null;
+    if (progressAnimationRef.current != null) {
+      cancelAnimationFrame(progressAnimationRef.current);
+      progressAnimationRef.current = null;
     }
-    setPressProgress(0);
+    const circle = progressRingCircleRef.current;
+    if (circle) {
+      circle.style.strokeDashoffset = String(circumference);
+    }
   }, []);
 
   const startPress = useCallback(() => {
     isLongPressActive.current = false;
     isCurrentlyPressing.current = true;
-    setPressProgress(0);
-    
-    const startTime = Date.now();
-    progressInterval.current = window.setInterval(() => {
-      const elapsed = Date.now() - startTime;
+
+    const circle = progressRingCircleRef.current;
+    if (circle) {
+      circle.style.strokeDashoffset = String(circumference);
+    }
+
+    startTimeRef.current = Date.now();
+
+    const tick = () => {
+      const elapsed = Date.now() - startTimeRef.current;
       const progress = Math.min((elapsed / LONG_PRESS_THRESHOLD) * 100, 100);
-      setPressProgress(progress);
-    }, 16);
+      const offset = circumference - (progress / 100) * circumference;
+      const el = progressRingCircleRef.current;
+      if (el) {
+        el.style.strokeDashoffset = String(offset);
+      }
+      if (progress >= 100) {
+        progressAnimationRef.current = null;
+        return;
+      }
+      progressAnimationRef.current = requestAnimationFrame(tick);
+    };
+    progressAnimationRef.current = requestAnimationFrame(tick);
 
     longPressTimer.current = window.setTimeout(() => {
       isLongPressActive.current = true;
       clearTimers();
-      
+
       if (navigator.vibrate) navigator.vibrate(50);
       setSelectedDate(getLocalDateString());
       setForceAddMode(true);
@@ -324,17 +317,17 @@ const App: React.FC = () => {
 
   const endPress = useCallback(() => {
     if (!isCurrentlyPressing.current) return;
-    
+
     const wasLong = isLongPressActive.current;
     clearTimers();
-    
+
     if (!wasLong) {
       addRecord();
     }
-    
+
     isLongPressActive.current = false;
     isCurrentlyPressing.current = false;
-  }, [clearTimers]);
+  }, [clearTimers, addRecord]);
 
   // Helpers for swipe navigation
   const setViewByIndex = (i: number) => {
@@ -409,23 +402,23 @@ const App: React.FC = () => {
     setRecords([]);
     setCustomIcon(null);
     setCustomSound(null);
+    setCustomBackground(null);
     setDarkMode(false);
     setSoundEnabled(true);
     setIsLocked(false);
     setCurrentView('calendar');
     
-    // 4. 重置清除标识并显示启动页（模拟重置）
-    // 不再使用 window.location.replace，因为在某些环境下会导致连接重置错误
+    localStorage.removeItem(LAST_EXPORT_FILE_KEY);
+    localStorage.removeItem(LAST_EXPORT_FILENAME_KEY);
+
     setTimeout(() => {
       setShowSplash(true);
       setIsClearing(false);
       showToast('所有本地记录已清除');
     }, 200);
-  }, []);
+  }, [showToast]);
 
   const executeExport = async () => {
-    console.log('📤 Export started, records:', records.length);
-    
     if (records.length === 0) {
       showToast('没有记录可供导出');
       return;
@@ -451,13 +444,10 @@ const App: React.FC = () => {
             directory: Directory.ExternalStorage,
             recursive: true
           });
-          console.log('✅ Directory created/exists: Download/lululu');
-        } catch (mkdirError: any) {
+        } catch {
           // 文件夹可能已存在，继续执行
-          console.log('ℹ️ Directory creation info:', mkdirError?.message);
         }
-        
-        // 写入到 Download/lululu 文件夹
+
         const result = await Filesystem.writeFile({
           path: `Download/lululu/${filename}`,
           data: csvContent,
@@ -465,20 +455,18 @@ const App: React.FC = () => {
           encoding: Encoding.UTF8,
         });
         
-        console.log('✅ File saved to Download/lululu:', result.uri);
-        
         setShowExportConfirm(false);
-        
-        // 保存最后导出的文件路径供分享使用
-        localStorage.setItem('lastExportFile', result.uri);
-        localStorage.setItem('lastExportFilename', filename);
+
+        localStorage.setItem(LAST_EXPORT_FILE_KEY, result.uri);
+        localStorage.setItem(LAST_EXPORT_FILENAME_KEY, filename);
         
         // 简化提示信息
         showToast(`✨ 已保存\n📁 Download/lululu\n📄 ${filename}`);
         
-      } catch (fsError: any) {
-        console.error('❌ Download write failed, trying Cache:', fsError?.message);
-        
+      } catch (fsError: unknown) {
+        const msg = fsError instanceof Error ? fsError.message : '';
+        console.error('Download write failed, trying Cache:', msg);
+
         // 备选方案：保存到缓存目录
         try {
           const cacheResult = await Filesystem.writeFile({
@@ -491,49 +479,44 @@ const App: React.FC = () => {
           console.log('✅ File saved to Cache:', cacheResult.uri);
           
           setShowExportConfirm(false);
-          localStorage.setItem('lastExportFile', cacheResult.uri);
-          localStorage.setItem('lastExportFilename', filename);
+          localStorage.setItem(LAST_EXPORT_FILE_KEY, cacheResult.uri);
+          localStorage.setItem(LAST_EXPORT_FILENAME_KEY, filename);
           
           showToast(`✨ 已保存\n📄 ${filename}`);
-        } catch (cacheError: any) {
-          console.error('❌ Cache write also failed:', cacheError?.message);
+        } catch (cacheError: unknown) {
+          const msg = cacheError instanceof Error ? cacheError.message : '未知错误';
+          console.error('Cache write failed:', msg);
           setShowExportConfirm(false);
-          showToast(`导出失败: ${cacheError?.message || '未知错误'}`);
+          showToast(`导出失败: ${msg}`);
         }
       }
-      
-    } catch (e: any) {
-      console.error('❌ Export error:', e?.message);
+    } catch (e: unknown) {
+      console.error('Export error:', e instanceof Error ? e.message : e);
       setShowExportConfirm(false);
       showToast('导出失败，请重试');
     }
   };
 
-  // 分享最后导出的文件
   const shareLastExport = async () => {
-    const fileUri = localStorage.getItem('lastExportFile');
-    const filename = localStorage.getItem('lastExportFilename');
-    
+    const fileUri = localStorage.getItem(LAST_EXPORT_FILE_KEY);
+    const filename = localStorage.getItem(LAST_EXPORT_FILENAME_KEY);
+
     if (!fileUri) {
       showToast('没有可分享的文件，请先导出数据');
       return;
     }
 
     try {
-      console.log('📤 Sharing file:', fileUri);
-      
       await Share.share({
         title: '分享鹿了么数据',
-        text: `导出数据：${filename}`,
+        text: `导出数据：${filename ?? ''}`,
         url: fileUri,
         dialogTitle: '选择分享方式',
       });
-      
-      console.log('✅ Share completed');
       showToast('✨ 分享成功');
-    } catch (error: any) {
-      console.log('Share cancelled:', error?.message);
-      if (error?.message?.includes('cancel') || error?.message?.includes('Cancel')) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : '';
+      if (/cancel/i.test(msg)) {
         showToast('已取消分享');
       } else {
         showToast('分享失败，请重试');
@@ -542,17 +525,17 @@ const App: React.FC = () => {
   };
 
   const removePin = () => {
-    localStorage.removeItem('lulemo_pin');
+    localStorage.removeItem(PIN_KEY);
+    localStorage.removeItem(SECURITY_QUESTION_KEY);
+    localStorage.removeItem(SECURITY_ANSWER_KEY);
     setCurrentPin(null);
     setShowRemovePinConfirm(false);
     showToast('已移除 PIN 码锁定');
   };
 
-  const radius = 80; 
-  const stroke = 3; 
+  const radius = 80;
+  const stroke = 3;
   const normalizedRadius = 78;
-  const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (pressProgress / 100) * circumference;
 
   const getViewIndex = () => {
     switch(currentView) {
@@ -564,15 +547,31 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`${darkMode ? 'dark' : ''}`}>
-      <div className="flex flex-col h-screen max-w-md mx-auto forest-bg shadow-2xl relative overflow-hidden transition-colors duration-[350ms] ease-out"
-           style={{ transitionProperty: 'background-color, border-color, color, box-shadow' }}>
-        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 flex justify-between items-center border-b border-green-100 dark:border-slate-800 z-10 shrink-0 transition-all duration-[350ms] ease-out"
-                style={{ transitionProperty: 'background-color, border-color' }}>
-          <h1 className="text-xl font-bold text-green-800 dark:text-green-400 flex items-center gap-2 transition-colors duration-[350ms] ease-out">
+    <div
+      className={`${darkMode ? 'dark' : ''}`}
+      style={{ transition: 'background-color 0.5s linear, color 0.5s linear' }}
+    >
+      <div
+        className="flex flex-col h-screen max-w-md mx-auto forest-bg shadow-2xl relative overflow-hidden transition-colors duration-500 ease-linear"
+        style={{
+          transitionProperty: 'background-color, border-color, color, box-shadow',
+          ...(customBackground
+            ? {
+                backgroundImage: darkMode
+                  ? `linear-gradient(rgba(10,15,11,0.92), rgba(13,22,15,0.88)), url(${customBackground})`
+                  : `linear-gradient(rgba(241,248,233,0.88), rgba(241,248,233,0.82)), url(${customBackground})`,
+                backgroundSize: 'cover',
+                backgroundAttachment: 'fixed',
+              }
+            : undefined),
+        }}
+      >
+        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 flex justify-between items-center border-b border-green-100 dark:border-slate-800 z-10 shrink-0 transition-all duration-500 ease-linear"
+                style={{ transitionProperty: 'background-color, border-color, color' }}>
+          <h1 className="text-xl font-bold text-green-800 dark:text-green-400 flex items-center gap-2 transition-colors duration-500 ease-linear">
             <span>🦌</span> 了么
           </h1>
-          <div className="text-xs text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full font-bold transition-all duration-[350ms] ease-out">隐私模式</div>
+          <div className="text-xs text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full font-bold transition-all duration-500 ease-linear">隐私模式</div>
         </header>
 
           <main ref={mainRef} className="flex-1 relative overflow-hidden"
@@ -598,6 +597,7 @@ const App: React.FC = () => {
                   setIsDetailOpen(true);
                 }}
                 stampAnimationDate={stampAnimationDate}
+                onDatePickerOpenChange={setIsDatePickerOpen}
               />
             </div>
             <div className="w-1/3 h-full overflow-y-auto pb-48 px-0 custom-scroll">
@@ -607,15 +607,17 @@ const App: React.FC = () => {
               <SettingsView 
                 onClear={() => setShowClearConfirm(true)} 
                 records={records} 
-                darkMode={darkMode} 
+                darkMode={darkMode}
                 toggleDarkMode={() => setDarkMode(!darkMode)} 
                 soundEnabled={soundEnabled}
                 toggleSound={() => setSoundEnabled(!soundEnabled)}
                 onTestSound={() => playPunchSound(true)}
                 customSound={customSound}
                 setCustomSound={setCustomSound}
-                customIcon={customIcon} 
-                setCustomIcon={setCustomIcon} 
+                customIcon={customIcon}
+                setCustomIcon={setCustomIcon}
+                customBackground={customBackground}
+                setCustomBackground={setCustomBackground}
                 onImportRecords={(nr) => {
                   setRecords(prev => [...prev, ...nr]);
                   showToast(`成功导入 ${nr.length} 条数据`);
@@ -634,25 +636,33 @@ const App: React.FC = () => {
           </div>
         </main>
 
-        <div className={`fixed bottom-32 left-1/2 -translate-x-1/2 z-30 transition-all duration-500 ${currentView === 'calendar' ? 'opacity-100 scale-100' : 'opacity-0 scale-50 pointer-events-none'}`}>
+        <div
+          className={`fixed bottom-32 left-1/2 -translate-x-1/2 z-30 origin-center ${
+            currentView === 'calendar' && !isDatePickerOpen
+              ? 'opacity-100 scale-100'
+              : 'opacity-0 scale-0 pointer-events-none'
+          }`}
+          style={{ transition: 'opacity 0.45s linear, transform 0.45s linear' }}
+        >
           <div className="punch-btn-container group">
             <svg height={radius * 2} width={radius * 2} className="progress-ring absolute pointer-events-none overflow-visible">
               <circle
                 stroke={darkMode ? '#4ade8022' : '#4CAF5022'}
-                strokeDasharray={circumference + ' ' + circumference}
+                strokeDasharray={`${circumference} ${circumference}`}
                 style={{ strokeDashoffset: 0 }}
-                strokeWidth={1} 
+                strokeWidth={1}
                 fill="transparent"
                 r={normalizedRadius}
                 cx={radius}
                 cy={radius}
               />
               <circle
+                ref={progressRingCircleRef}
                 className="progress-ring__circle"
                 stroke={darkMode ? '#4ade80' : '#4CAF50'}
-                strokeDasharray={circumference + ' ' + circumference}
-                style={{ strokeDashoffset }}
-                strokeWidth={stroke} 
+                strokeDasharray={`${circumference} ${circumference}`}
+                style={{ strokeDashoffset: circumference }}
+                strokeWidth={stroke}
                 strokeLinecap="round"
                 fill="transparent"
                 r={normalizedRadius}
@@ -833,7 +843,19 @@ const App: React.FC = () => {
         )}
         
         {showSplash && <SplashScreen onConfirm={handleAgeConfirm} />}
-        {isLocked && <LockScreen onUnlock={() => setIsLocked(false)} />}
+        {isLocked && (
+          <LockScreen
+            onUnlock={() => setIsLocked(false)}
+            onResetPin={() => {
+              localStorage.removeItem(PIN_KEY);
+              localStorage.removeItem(SECURITY_QUESTION_KEY);
+              localStorage.removeItem(SECURITY_ANSWER_KEY);
+              setCurrentPin(null);
+              setIsLocked(false);
+              showToast('已重置 PIN，可在设置中重新设置');
+            }}
+          />
+        )}
       </div>
     </div>
   );

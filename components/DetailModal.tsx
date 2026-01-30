@@ -148,7 +148,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
           <>
             <div className="max-h-[350px] overflow-y-auto detail-list-scroll mb-6 flex flex-col gap-3 pr-1">
               {records.length > 0 ? (
-                records.sort((a,b) => b.timestamp - a.timestamp).map(record => (
+                [...records].sort((a, b) => b.timestamp - a.timestamp).map(record => (
                   <div 
                     key={record.id} 
                     className={`flex flex-col p-4 bg-green-50 dark:bg-slate-800/50 rounded-2xl border border-green-100 dark:border-slate-800 group transition-all hover:shadow-md ${deletingIds.has(record.id) ? 'animate-delete' : ''}`}

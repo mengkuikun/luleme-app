@@ -1,6 +1,6 @@
-
 import React, { useState, useRef } from 'react';
 import { RecordEntry } from '../types';
+import { PIN_KEY, SECURITY_QUESTION_KEY, SECURITY_ANSWER_KEY, SECURITY_QUESTIONS } from '../constants';
 
 interface Props {
   onClear: () => void;
@@ -11,6 +11,8 @@ interface Props {
   toggleSound: () => void;
   customIcon: string | null;
   setCustomIcon: (icon: string | null) => void;
+  customBackground: string | null;
+  setCustomBackground: (url: string | null) => void;
   customSound: string | null;
   setCustomSound: (sound: string | null) => void;
   onImportRecords?: (newRecords: RecordEntry[]) => void;
@@ -30,8 +32,10 @@ const SettingsView: React.FC<Props> = ({
   toggleDarkMode, 
   soundEnabled,
   toggleSound,
-  customIcon, 
+  customIcon,
   setCustomIcon,
+  customBackground,
+  setCustomBackground,
   customSound,
   setCustomSound,
   onImportRecords,
@@ -45,19 +49,48 @@ const SettingsView: React.FC<Props> = ({
 }) => {
   const [isSettingPin, setIsSettingPin] = useState(false);
   const [tempPin, setTempPin] = useState('');
+  const [tempSecurityQuestionId, setTempSecurityQuestionId] = useState<string>(SECURITY_QUESTIONS[0].id);
+  const [tempSecurityAnswer, setTempSecurityAnswer] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const soundInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const backgroundInputRef = useRef<HTMLInputElement>(null);
+  const [backgroundUrlInput, setBackgroundUrlInput] = useState('');
 
   const handlePinSubmit = () => {
-    if (tempPin.length === 4) {
-      localStorage.setItem('lulemo_pin', tempPin);
-      onPinChange(tempPin);
-      setIsSettingPin(false);
-      setTempPin('');
-    } else {
+    if (tempPin.length !== 4) {
       alert("请输入4位数字");
+      return;
     }
+    localStorage.setItem(PIN_KEY, tempPin);
+    const answer = tempSecurityAnswer.trim();
+    if (answer) {
+      localStorage.setItem(SECURITY_QUESTION_KEY, tempSecurityQuestionId);
+      localStorage.setItem(SECURITY_ANSWER_KEY, answer);
+    } else {
+      localStorage.removeItem(SECURITY_QUESTION_KEY);
+      localStorage.removeItem(SECURITY_ANSWER_KEY);
+    }
+    onPinChange(tempPin);
+    setIsSettingPin(false);
+    setTempPin('');
+    setTempSecurityAnswer('');
+  };
+
+  const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 1024 * 5) {
+        alert('背景图太大（最大支持 5MB）');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCustomBackground(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+    if (e.target) e.target.value = '';
   };
 
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,7 +191,13 @@ const SettingsView: React.FC<Props> = ({
                 </div>
               </div>
               <button 
-                onClick={() => currentPin ? onRemovePinRequest?.() : setIsSettingPin(true)}
+                onClick={() => {
+                  if (currentPin) onRemovePinRequest?.();
+                  else {
+                    setIsSettingPin(true);
+                    setTempSecurityQuestionId(localStorage.getItem(SECURITY_QUESTION_KEY) || SECURITY_QUESTIONS[0].id);
+                  }
+                }}
                 className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${currentPin ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-green-500 text-white'}`}
               >
                 {currentPin ? '移除' : '去开启'}
@@ -169,11 +208,30 @@ const SettingsView: React.FC<Props> = ({
               <input 
                 type="password" 
                 maxLength={4} 
-                placeholder="输入4位数字"
+                placeholder="输入4位数字 PIN"
                 className="w-full p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-center text-2xl tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-green-400 text-gray-800 dark:text-white"
                 value={tempPin}
                 onChange={(e) => setTempPin(e.target.value.replace(/[^0-9]/g, ''))}
               />
+              <div>
+                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 mb-1.5">安全问题（忘记 PIN 时用于验证，可选）</label>
+                <select
+                  value={tempSecurityQuestionId}
+                  onChange={(e) => setTempSecurityQuestionId(e.target.value)}
+                  className="w-full p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm font-medium text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  {SECURITY_QUESTIONS.map((q) => (
+                    <option key={q.id} value={q.id}>{q.label}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="输入答案（不填则不可通过安全问题找回）"
+                  className="w-full mt-2 p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-400 placeholder:text-gray-400"
+                  value={tempSecurityAnswer}
+                  onChange={(e) => setTempSecurityAnswer(e.target.value)}
+                />
+              </div>
               <div className="flex gap-2">
                 <button onClick={handlePinSubmit} className="flex-1 bg-green-500 text-white font-bold py-2 rounded-xl">保存</button>
                 <button onClick={() => setIsSettingPin(false)} className="flex-1 bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 font-bold py-2 rounded-xl">取消</button>
@@ -287,6 +345,74 @@ const SettingsView: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* Custom Background Section */}
+      <div className="bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden">
+        <div className="p-5">
+          <h3 className="text-xs font-bold text-green-600 dark:text-green-500 uppercase mb-4 tracking-wider">自定义背景</h3>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-20 h-14 rounded-xl bg-gray-100 dark:bg-slate-800 border border-green-100 dark:border-slate-700 overflow-hidden shrink-0">
+                {customBackground ? (
+                  <img src={customBackground} alt="背景" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="w-full h-full flex items-center justify-center text-2xl">🖼️</span>
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => backgroundInputRef.current?.click()}
+                    className="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 transition-colors"
+                  >
+                    上传图片
+                  </button>
+                  {customBackground && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomBackground(null)}
+                      className="px-3 py-1.5 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 text-xs font-bold rounded-lg transition-colors"
+                    >
+                      恢复默认
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-500 dark:text-slate-400">支持 JPG/PNG，最大 5MB</p>
+              </div>
+              <input
+                type="file"
+                ref={backgroundInputRef}
+                onChange={handleBackgroundUpload}
+                className="hidden"
+                accept="image/*"
+              />
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="或粘贴图片链接"
+                className="flex-1 p-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400"
+                value={backgroundUrlInput}
+                onChange={(e) => setBackgroundUrlInput(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const url = backgroundUrlInput.trim();
+                  if (url) {
+                    setCustomBackground(url);
+                    setBackgroundUrlInput('');
+                  }
+                }}
+                className="px-4 py-2.5 bg-green-500 text-white text-xs font-bold rounded-xl shrink-0"
+              >
+                使用
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Theme Section */}
       <div className="bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden">
         <div className="p-5 flex justify-between items-center">
@@ -299,9 +425,10 @@ const SettingsView: React.FC<Props> = ({
                 <div className="text-xs text-gray-500 dark:text-slate-400">更舒适的夜间记录体验</div>
               </div>
             </div>
-            <button 
+            <button
+              type="button"
               onClick={toggleDarkMode}
-              className={`w-14 h-8 rounded-full transition-colors relative ${darkMode ? 'bg-green-500' : 'bg-gray-300 dark:bg-slate-700'}`}
+              className={`w-14 h-8 rounded-full transition-colors duration-500 ease-linear relative ${darkMode ? 'bg-green-500' : 'bg-gray-300 dark:bg-slate-700'}`}
             >
               <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${darkMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
             </button>
@@ -376,7 +503,7 @@ const SettingsView: React.FC<Props> = ({
 
         <div className="bg-green-900/5 dark:bg-green-400/5 rounded-3xl p-6 text-center">
           <h4 className="font-bold text-green-900 dark:text-green-400 mb-1">关于鹿了么</h4>
-          <p className="text-xs text-green-800/60 dark:text-green-400/40 mb-4">版本 1.4.4</p>
+          <p className="text-xs text-green-800/60 dark:text-green-400/40 mb-4">版本 1.5.0</p>
           <p className="text-xs text-green-800/80 dark:text-green-400/60 leading-relaxed italic px-4">
             "隐私是我们的最高准则。您的数据永远只会留在您的手机上。"
           </p>

@@ -134,6 +134,7 @@
             0%, 100% { transform: scale(1); filter: brightness(1); }
             50% { transform: scale(1.05); filter: brightness(1.1) drop-shadow(0 0 10px rgba(76, 175, 80, 0.3)); }
         }
+        /* 统一使用线性插值，避免突兀感 */
 
         @keyframes ripple-burst {
             0% { transform: scale(0.8); opacity: 1; border-width: 4px; }
@@ -152,7 +153,7 @@
             justify-content: center;
             overflow: hidden;
             box-shadow: 0 12px 40px rgba(76, 175, 80, 0.25);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: transform 0.4s linear, box-shadow 0.4s linear;
             transform-style: preserve-3d;
         }
         .dark .button-bg-circle {
@@ -166,7 +167,7 @@
             height: 140px;
             background: radial-gradient(circle, rgba(76, 175, 80, 0.35) 0%, transparent 70%);
             border-radius: 50%;
-            animation: bg-glow 3s infinite ease-in-out;
+            animation: bg-glow 3.5s infinite linear;
             z-index: 1;
         }
 
@@ -179,7 +180,7 @@
             pointer-events: none;
         }
         .punch-btn-container:active .active-ripple {
-            animation: ripple-burst 0.6s ease-out forwards;
+            animation: ripple-burst 0.8s linear forwards;
         }
 
         .deer-icon-img {
@@ -188,7 +189,7 @@
             object-fit: contain;
             animation: inner-breathe 4s infinite ease-in-out;
             display: block;
-            transition: transform 0.3s ease;
+            transition: transform 0.4s linear;
         }
 
         .dark .deer-icon-img {
@@ -203,18 +204,18 @@
         .punch-btn-container:active .button-bg-circle {
             transform: translateY(2px) scale(0.9) rotateX(15deg) rotateY(-10deg);
             box-shadow: 0 5px 15px rgba(76, 175, 80, 0.1);
-            transition: transform 0.1s ease-out;
+            transition: transform 0.28s linear, box-shadow 0.28s linear;
         }
 
-        /* Long Press Ring Progress */
+        /* Long Press Ring Progress - 由 requestAnimationFrame 驱动，不用 transition 避免卡顿 */
         .progress-ring {
           pointer-events: none;
           z-index: 10;
         }
         .progress-ring__circle {
-          transition: stroke-dashoffset 0.05s linear;
           transform: rotate(-90deg);
           transform-origin: 50% 50%;
+          will-change: stroke-dashoffset;
         }
 
         /* Toast notifications */
