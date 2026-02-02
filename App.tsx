@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ViewType, RecordEntry } from './types';
 import {
   STORAGE_KEY,
@@ -537,6 +537,11 @@ const App: React.FC = () => {
   const stroke = 3;
   const normalizedRadius = 78;
 
+  const selectedDateRecords = useMemo(() => {
+    if (!selectedDate) return [];
+    return records.filter(r => getLocalDateString(new Date(r.timestamp)) === selectedDate);
+  }, [records, selectedDate]);
+
   const getViewIndex = () => {
     switch(currentView) {
       case 'calendar': return 0;
@@ -626,7 +631,7 @@ const App: React.FC = () => {
                   if (records.length === 0) setShowNoDataAlert(true);
                   else setShowExportConfirm(true);
                 }}
-                onShareExport={() => shareLastExport()}
+                onShareExport={shareLastExport}
                 onShowChangeLog={() => setShowChangeLog(true)}
                 onRemovePinRequest={() => setShowRemovePinConfirm(true)}
                 currentPin={currentPin}
@@ -719,7 +724,7 @@ const App: React.FC = () => {
         {isDetailOpen && selectedDate && (
           <DetailModal 
             date={selectedDate}
-            records={records.filter(r => getLocalDateString(new Date(r.timestamp)) === selectedDate)}
+            records={selectedDateRecords}
             onClose={() => { setIsDetailOpen(false); setForceAddMode(false); }}
             onDelete={(id) => setRecords(prev => prev.filter(r => r.id !== id))}
             onAdd={addRecord}
