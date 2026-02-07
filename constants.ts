@@ -13,6 +13,11 @@ export const LAST_EXPORT_FILENAME_KEY = 'lastExportFilename';
 export const SECURITY_QUESTION_KEY = 'lulemo_security_question';
 export const SECURITY_ANSWER_KEY = 'lulemo_security_answer';
 export const CUSTOM_BACKGROUND_KEY = 'lulemo_custom_background';
+export const SAGE_MODE_DURATION_KEY = 'lulemo_sage_mode_duration_minutes';
+export const SAGE_MODE_COOLDOWN_END_KEY = 'lulemo_sage_mode_cooldown_end';
+export const SAGE_MODE_ENABLED_KEY = 'lulemo_sage_mode_enabled';
+export const BIOMETRIC_UNLOCK_ENABLED_KEY = 'lulemo_biometric_unlock_enabled';
+export const DEFAULT_SAGE_MODE_DURATION_MINUTES = 30;
 
 export const SECURITY_QUESTIONS = [
   { id: 'pet', label: '您的第一只宠物叫什么？' },

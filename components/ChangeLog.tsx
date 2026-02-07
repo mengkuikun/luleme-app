@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface Props {
   onClose: () => void;
@@ -6,7 +6,58 @@ interface Props {
 }
 
 const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const requestClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    if (typeof window !== 'undefined') {
+      closeTimerRef.current = window.setTimeout(() => {
+        onClose();
+      }, 360);
+    } else {
+      onClose();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
   const changes = [
+    {
+      version: '1.6.0',
+      date: '2026-02-08',
+      title: '设置中心重构、贤者模式完善与解锁体验升级',
+      items: [
+        '✨ 新增：贤者模式完整冷却流程，打卡后进入倒计时，冷却结束前禁止再次打卡',
+        '✨ 新增：贤者模式总开关（默认开启），可在设置中随时启用/关闭',
+        '✨ 新增：贤者模式时长自定义（分钟输入 + 5/15/30/60 快捷档位）',
+        '✨ 新增：主打卡按钮在贤者模式期间切换为闹钟倒计时动画与剩余时间显示',
+        '✨ 新增：生物识别解锁（与 PIN 联动），支持设备可用性检测与状态提示',
+        '✨ 新增：PIN 设置时可选启用安全问题，并支持通过安全问题重置 PIN',
+        '✨ 新增：安全问题独立弹层选择器与过渡动画，支持遮罩关闭',
+        '✨ 新增：设置页顶部搜索功能，支持关键词快速定位配置项',
+        '✨ 新增：设置页一键“全部展开/全部收起”控制',
+        '✨ 新增：版本信息外链跳转（GitHub）',
+        '✨ 优化：设置页信息架构重组为安全/行为/外观/数据分组，降低信息噪音',
+        '✨ 优化：关于模块独立展示，不再折叠，提升可达性',
+        '✨ 优化：更新日志弹窗开关动画节奏，过渡更平滑连贯',
+        '✨ 优化：日历选择器采用全局遮罩策略，统一跨页面压暗体验',
+        '✨ 优化：全局遮罩加入背景模糊，并将日期选择器改为 Portal 渲染，修复层级冲突',
+        '✨ 优化：设置页关于卡片升级为毛玻璃风格（半透明 + blur + 高光边界）',
+        '✨ 优化：外观区“打卡图标/背景图”预览规格统一（同尺寸、同对齐、同间距）',
+        '✅ 修复：设置页安全问题弹窗错位到统计页、暗黑模式不完整等层级与主题问题',
+        '✅ 修复：设置页部分文案与提示词不准确（找回/重置等）',
+        '✅ 修复：设置页面乱码（编码不一致导致），统一为 UTF-8 后恢复正常显示',
+        '✅ 修复：外观区默认占位图标与标题缺失问题',
+      ]
+    },
     {
       version: '1.5.0',
       date: '2026-01-30',
@@ -90,8 +141,18 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
   ];
 
   return (
-    <div className={`fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 ${darkMode ? 'dark' : ''}`} onClick={onClose}>
-      <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-[2.5rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-green-100 dark:border-slate-800 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div
+      className={`fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm ${
+        isClosing ? 'animate-changelog-fade-out' : 'animate-changelog-fade-in'
+      } ${darkMode ? 'dark' : ''}`}
+      onClick={requestClose}
+    >
+      <div
+        className={`w-full max-w-md bg-white dark:bg-slate-900 rounded-[2.5rem] p-6 shadow-2xl border border-green-100 dark:border-slate-800 max-h-[80vh] overflow-y-auto ${
+          isClosing ? 'animate-changelog-sheet-out' : 'animate-changelog-sheet-in'
+        }`}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -101,7 +162,7 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">更新日志</h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
           >
             <i className="fa-solid fa-xmark text-gray-500 dark:text-slate-400"></i>
@@ -153,13 +214,44 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
         {/* Footer */}
         <div className="mt-6 pt-4 border-t border-gray-100 dark:border-slate-800">
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-2xl transition-colors active:scale-95"
           >
             关闭
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes changelogFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes changelogFadeOut {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+        @keyframes changelogSheetIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes changelogSheetOut {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to { opacity: 0; transform: translateY(12px) scale(0.97); }
+        }
+        .animate-changelog-fade-in {
+          animation: changelogFadeIn 0.34s ease-out forwards;
+        }
+        .animate-changelog-fade-out {
+          animation: changelogFadeOut 0.28s ease-in forwards;
+        }
+        .animate-changelog-sheet-in {
+          animation: changelogSheetIn 0.42s cubic-bezier(0.2, 0.85, 0.2, 1) forwards;
+        }
+        .animate-changelog-sheet-out {
+          animation: changelogSheetOut 0.34s ease-in forwards;
+        }
+      `}</style>
     </div>
   );
 };

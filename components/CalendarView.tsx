@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { RecordEntry } from '../types';
 import { getLocalDateString } from '../constants';
 
@@ -6,10 +7,11 @@ interface Props {
   records: RecordEntry[];
   onDateClick: (date: string) => void;
   stampAnimationDate: string | null;
+  darkMode: boolean;
   onDatePickerOpenChange?: (open: boolean) => void;
 }
 
-const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDate, onDatePickerOpenChange }) => {
+const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDate, darkMode, onDatePickerOpenChange }) => {
   const [viewDate, setViewDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -135,29 +137,14 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
       </div>
 
       {/* Date Picker Modal */}
-      {showDatePicker && (
+      {showDatePicker && typeof document !== 'undefined' && createPortal(
         <div 
-          className="fixed inset-0 z-[9999] isolate pointer-events-auto flex items-center justify-center p-6 animate-in fade-in duration-300" 
-          style={{ 
-            background: 'rgba(0, 0, 0, 0)',
-            animation: 'fadeInBackdrop 0.3s ease-out forwards'
-          }}
+          className={`${darkMode ? 'dark ' : ''}fixed inset-0 z-[100] isolate pointer-events-auto flex items-center justify-center p-6`}
           onClick={() => { setDatePickerOpen(false); }}
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
           <style>{`
-            @keyframes fadeInBackdrop {
-              from {
-                background: rgba(0, 0, 0, 0);
-                backdrop-filter: blur(0px);
-              }
-              to {
-                background: rgba(0, 0, 0, 0.6);
-                backdrop-filter: blur(8px);
-              }
-            }
-            
             @keyframes slideUpBounce {
               0% {
                 opacity: 0;
@@ -318,7 +305,8 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
