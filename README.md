@@ -14,16 +14,17 @@
 
 ## 目录
 
-- [功能亮点](#功能亮点)
-- [实机截图](#实机截图)
-- [技术栈](#技术栈)
-- [快速开始](#快速开始)
-- [Android 构建与运行](#android-构建与运行)
-- [隐私与数据说明](#隐私与数据说明)
-- [项目结构](#项目结构)
-- [更新记录](#更新记录)
-- [贡献指南](#贡献指南)
+- [功能亮点](#features)
+- [实机截图](#screenshots)
+- [技术栈](#tech-stack)
+- [快速开始](#quickstart)
+- [Android 构建与运行](#android)
+- [隐私与数据说明](#privacy)
+- [项目结构](#structure)
+- [更新记录](#changelog)
+- [贡献指南](#contributing)
 
+<a id="features"></a>
 ## 功能亮点
 
 - 年龄确认与启动引导，首次进入流程更清晰。
@@ -35,9 +36,10 @@
 - 数据管理支持 CSV 导出、导入与分享。
 - 外观与体验可配置：深色模式、自定义图标、背景、音效。
 
+<a id="screenshots"></a>
 ## 实机截图
 
-> 以下展示对应你提供的 4 张实机演示图。  
+> 以下展示对应你提供的 4 张实机演示图。
 > 建议将图片放到 `docs/screenshots/` 目录并使用下列文件名，以确保 README 在 GitHub 正常渲染。
 
 <table>
@@ -67,6 +69,7 @@
   </tr>
 </table>
 
+<a id="tech-stack"></a>
 ## 技术栈
 
 - 前端：React 19 + TypeScript
@@ -75,6 +78,7 @@
 - 图表：Recharts
 - 原生能力：Filesystem / Share / Native Biometric
 
+<a id="quickstart"></a>
 ## 快速开始
 
 ### 环境要求
@@ -96,6 +100,7 @@ npm run build
 npm run preview
 ```
 
+<a id="android"></a>
 ## Android 构建与运行
 
 ```bash
@@ -106,12 +111,14 @@ npx cap open android
 
 随后在 Android Studio 中运行或打包 APK/AAB。
 
+<a id="privacy"></a>
 ## 隐私与数据说明
 
 - 应用数据默认保存在本地（`localStorage`）。
 - PIN 与安全问题答案已使用哈希方案存储（PBKDF2-SHA256）。
 - 导出功能使用本地文件系统能力，不依赖云端后端。
 
+<a id="structure"></a>
 ## 项目结构
 
 ```text
@@ -125,11 +132,13 @@ npx cap open android
 └─ vite.config.ts      # Vite 配置
 ```
 
+<a id="changelog"></a>
 ## 更新记录
 
 - 当前版本：`1.6.0`
 - 详细变更：应用内「更新日志」弹窗（`components/ChangeLog.tsx`）
 
+<a id="contributing"></a>
 ## 贡献指南
 
 1. Fork 本仓库并新建分支。
