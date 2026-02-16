@@ -57,12 +57,12 @@
   </tr>
   <tr>
     <td align="center">
-      <img src="./docs/screenshots/03-stats-heatmap.jpg" width="240" alt="统计与热力图" />
+      <img src="./docs/screenshots/04-settings.jpg" width="240" alt="统计与热力图" />
       <br />
       <sub>统计与热力图</sub>
     </td>
     <td align="center">
-      <img src="./docs/screenshots/04-settings.jpg" width="240" alt="设置中心" />
+      <img src="./docs/screenshots/03-stats-heatmap.jpg" width="240" alt="设置中心" />
       <br />
       <sub>设置中心</sub>
     </td>
