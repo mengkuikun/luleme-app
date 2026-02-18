@@ -1,5 +1,6 @@
 
 import React from 'react';
+import FaIcon from './FaIcon';
 
 interface Props {
   onConfirm: () => void;
@@ -34,7 +35,7 @@ const SplashScreen: React.FC<Props> = ({ onConfirm }) => {
       </div>
       
       <div className="mt-12 text-xs text-green-600 flex items-center gap-2 opacity-70">
-        <i className="fa-solid fa-shield-halved"></i>
+        <FaIcon name="shield-halved" />
         <span>隐私第一，所有数据仅存储在本地</span>
       </div>
     </div>

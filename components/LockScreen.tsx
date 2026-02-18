@@ -1,13 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PIN_KEY, SECURITY_QUESTION_KEY, SECURITY_ANSWER_KEY, SECURITY_QUESTIONS } from '../constants';
+import {
+  PIN_KEY,
+  SECURITY_QUESTION_KEY,
+  SECURITY_ANSWER_KEY,
+  SECURITY_QUESTIONS,
+  PIN_FAILED_ATTEMPTS_KEY,
+  PIN_LOCK_UNTIL_KEY,
+} from '../constants';
 import { hashSecret, isLegacyPlainSecret, verifySecret } from '../utils/secret';
 import { BIOMETRY_LABEL, getBiometricAvailability, verifyBiometricIdentity } from '../utils/biometric';
+import FaIcon from './FaIcon';
 
 interface Props {
   onUnlock: () => void;
   biometricEnabled: boolean;
   /** 重置 PIN（清除 PIN 与安全问题后解锁） */
   onResetPin?: () => void;
+}
+
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_LOCK_DURATION_MS = 30_000;
+
+function readStoredNumber(key: string): number | null {
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin }) => {
@@ -23,6 +41,18 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState('生物识别');
   const [biometricError, setBiometricError] = useState('');
+  const [pinStatus, setPinStatus] = useState('');
+  const [failedPinAttempts, setFailedPinAttempts] = useState<number>(() => {
+    const attempts = readStoredNumber(PIN_FAILED_ATTEMPTS_KEY);
+    if (attempts == null || attempts < 0) return 0;
+    return Math.min(MAX_PIN_ATTEMPTS, Math.floor(attempts));
+  });
+  const [pinLockedUntil, setPinLockedUntil] = useState<number | null>(() => {
+    const lockUntil = readStoredNumber(PIN_LOCK_UNTIL_KEY);
+    if (lockUntil == null || lockUntil <= Date.now()) return null;
+    return lockUntil;
+  });
+  const [nowTs, setNowTs] = useState(Date.now());
   const autoBiometricTriedRef = useRef(false);
 
   const storedPin = localStorage.getItem(PIN_KEY);
@@ -83,6 +113,66 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
     void handleBiometricUnlock(true);
   }, [biometricEnabled, isBiometricAvailable, showForgot, showResetReady]);
 
+  useEffect(() => {
+    if (failedPinAttempts > 0) {
+      localStorage.setItem(PIN_FAILED_ATTEMPTS_KEY, String(failedPinAttempts));
+    } else {
+      localStorage.removeItem(PIN_FAILED_ATTEMPTS_KEY);
+    }
+  }, [failedPinAttempts]);
+
+  useEffect(() => {
+    if (pinLockedUntil && pinLockedUntil > Date.now()) {
+      localStorage.setItem(PIN_LOCK_UNTIL_KEY, String(pinLockedUntil));
+    } else {
+      localStorage.removeItem(PIN_LOCK_UNTIL_KEY);
+    }
+  }, [pinLockedUntil]);
+
+  useEffect(() => {
+    if (!pinLockedUntil) return;
+    const tick = () => {
+      const now = Date.now();
+      setNowTs(now);
+      if (now >= pinLockedUntil) {
+        setPinLockedUntil(null);
+        setFailedPinAttempts(0);
+        setPinStatus('');
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [pinLockedUntil]);
+
+  const pinRemainingMs = pinLockedUntil ? Math.max(0, pinLockedUntil - nowTs) : 0;
+  const isPinLocked = pinRemainingMs > 0;
+  const pinRemainingSeconds = Math.max(1, Math.ceil(pinRemainingMs / 1000));
+
+  const clearPinAttackState = () => {
+    setFailedPinAttempts(0);
+    setPinLockedUntil(null);
+    setPinStatus('');
+    localStorage.removeItem(PIN_FAILED_ATTEMPTS_KEY);
+    localStorage.removeItem(PIN_LOCK_UNTIL_KEY);
+  };
+
+  const handlePinFailed = () => {
+    setError(true);
+    setFailedPinAttempts((prev) => {
+      const next = prev + 1;
+      if (next >= MAX_PIN_ATTEMPTS) {
+        setPinLockedUntil(Date.now() + PIN_LOCK_DURATION_MS);
+        setInput('');
+        setPinStatus(`尝试过多，请 ${Math.ceil(PIN_LOCK_DURATION_MS / 1000)} 秒后重试`);
+        return next;
+      }
+      setPinStatus(`PIN 错误，还可尝试 ${MAX_PIN_ATTEMPTS - next} 次`);
+      window.setTimeout(() => setInput(''), 500);
+      return next;
+    });
+  };
+
   const handleForgotSubmit = async () => {
     const trimmed = securityAnswer.trim();
     if (!savedAnswer || !questionLabel) {
@@ -122,12 +212,14 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
 
   const handleResetPin = () => {
     setShowResetReady(false);
+    clearPinAttackState();
     onResetPin?.();
   };
 
   const handlePress = (num: string) => {
-    if (isVerifyingPin) return;
+    if (isVerifyingPin || isPinLocked) return;
     setBiometricError('');
+    setPinStatus('');
 
     if (input.length < 4) {
       setError(false);
@@ -139,8 +231,7 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
         verifySecret(newInput, storedPin)
           .then(async (ok) => {
             if (!ok) {
-              setError(true);
-              setTimeout(() => setInput(''), 500);
+              handlePinFailed();
               return;
             }
 
@@ -150,12 +241,12 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
               localStorage.setItem(PIN_KEY, hashedPin);
             }
 
+            clearPinAttackState();
             onUnlock();
           })
           .catch((e) => {
             console.error('PIN verification failed', e);
-            setError(true);
-            setTimeout(() => setInput(''), 500);
+            handlePinFailed();
           })
           .finally(() => {
             setIsVerifyingPin(false);
@@ -165,9 +256,11 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
   };
 
   const handleDelete = () => {
+    if (isPinLocked) return;
     setInput(input.slice(0, -1));
     setError(false);
     setBiometricError('');
+    setPinStatus('');
   };
 
   return (
@@ -198,12 +291,23 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
         })}
       </div>
 
+      {(pinStatus || isPinLocked) && (
+        <p className="text-xs text-red-500 mb-4 text-center">
+          {isPinLocked
+            ? `PIN 已锁定，请 ${pinRemainingSeconds} 秒后重试`
+            : `${pinStatus}${failedPinAttempts > 0 ? `（已失败 ${failedPinAttempts}/${MAX_PIN_ATTEMPTS} 次）` : ''}`}
+        </p>
+      )}
+
       <div className="grid grid-cols-3 gap-6 animate-in slide-in-from-bottom-10 duration-500 delay-150">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <button 
             key={n} 
             onClick={() => handlePress(n.toString())}
-            className="w-16 h-16 rounded-full bg-white/80 backdrop-blur-sm shadow-sm border border-green-100 flex items-center justify-center text-xl font-bold text-green-800 active:bg-green-500 active:text-white active:scale-90 transition-all duration-100"
+            disabled={isPinLocked}
+            className={`w-16 h-16 rounded-full bg-white/80 backdrop-blur-sm shadow-sm border border-green-100 flex items-center justify-center text-xl font-bold text-green-800 transition-all duration-100 disabled:opacity-45 disabled:cursor-not-allowed ${
+              isPinLocked ? '' : 'active:bg-green-500 active:text-white active:scale-90'
+            }`}
           >
             {n}
           </button>
@@ -211,16 +315,22 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
         <div />
         <button 
           onClick={() => handlePress('0')}
-          className="w-16 h-16 rounded-full bg-white/80 backdrop-blur-sm shadow-sm border border-green-100 flex items-center justify-center text-xl font-bold text-green-800 active:bg-green-500 active:text-white active:scale-90 transition-all duration-100"
+          disabled={isPinLocked}
+          className={`w-16 h-16 rounded-full bg-white/80 backdrop-blur-sm shadow-sm border border-green-100 flex items-center justify-center text-xl font-bold text-green-800 transition-all duration-100 disabled:opacity-45 disabled:cursor-not-allowed ${
+            isPinLocked ? '' : 'active:bg-green-500 active:text-white active:scale-90'
+          }`}
         >
           0
         </button>
         <button 
           onClick={handleDelete}
-          className="w-16 h-16 flex items-center justify-center text-green-600 active:scale-75 transition-transform"
+          disabled={isPinLocked}
+          className={`w-16 h-16 flex items-center justify-center text-green-600 transition-transform disabled:opacity-45 disabled:cursor-not-allowed ${
+            isPinLocked ? '' : 'active:scale-75'
+          }`}
           aria-label="Delete"
         >
-          <i className="fa-solid fa-delete-left text-2xl"></i>
+          <FaIcon name="delete-left" className="text-2xl" />
         </button>
       </div>
 
@@ -232,7 +342,7 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
             disabled={isVerifyingBiometric}
             className="w-full py-3 rounded-2xl bg-white/85 border border-green-200 text-green-700 font-bold shadow-sm backdrop-blur-sm active:scale-[0.98] transition disabled:opacity-60"
           >
-            <i className={`fa-solid ${isVerifyingBiometric ? 'fa-spinner fa-spin' : 'fa-fingerprint'} mr-2`}></i>
+            <FaIcon name={isVerifyingBiometric ? 'spinner' : 'fingerprint'} className="mr-2" spin={isVerifyingBiometric} />
             {isVerifyingBiometric ? '验证中...' : `使用${biometricLabel}解锁`}
           </button>
           {biometricError && (

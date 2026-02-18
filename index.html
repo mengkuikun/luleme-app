@@ -3,17 +3,13 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>鹿了么 - 记录你的小秘密</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        darkMode: 'class',
-      }
-    </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Zhi+Mang+Xing&display=swap');
+        :root {
+            --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+            --font-handwriting: "STKaiti", "KaiTi", "Kaiti SC", cursive;
+        }
         
         /* Dark mode smooth transition - enhanced iOS-like curve with easing */
         * {
@@ -34,7 +30,7 @@
         }
         
         body {
-            font-family: 'Noto Sans SC', sans-serif;
+            font-family: var(--font-sans);
             background-color: #F1F8E9;
             overscroll-behavior: none;
             overflow: hidden;
@@ -82,7 +78,7 @@
         }
 
         .handwriting {
-            font-family: 'Zhi Mang Xing', cursive;
+            font-family: var(--font-handwriting);
         }
         .forest-bg {
             background-image: linear-gradient(rgba(241, 248, 233, 0.9), rgba(241, 248, 233, 0.8)), url('https://picsum.photos/id/10/800/1200');
@@ -249,16 +245,6 @@
           animation: sage-countdown-pulse 1s linear infinite;
         }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "recharts": "https://esm.sh/recharts@^3.6.0"
-  }
-}
-</script>
 </head>
 <body>
     <div id="root"></div>

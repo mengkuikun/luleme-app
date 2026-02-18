@@ -1,1 +1,0 @@
-// File removed as requested: button icons now use static ethereal deer image.

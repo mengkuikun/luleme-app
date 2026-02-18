@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { ViewType, RecordEntry } from './types';
 import {
   STORAGE_KEY,
@@ -13,6 +13,8 @@ import {
   LAST_EXPORT_FILENAME_KEY,
   SECURITY_QUESTION_KEY,
   SECURITY_ANSWER_KEY,
+  PIN_FAILED_ATTEMPTS_KEY,
+  PIN_LOCK_UNTIL_KEY,
   CUSTOM_BACKGROUND_KEY,
   SAGE_MODE_DURATION_KEY,
   SAGE_MODE_COOLDOWN_END_KEY,
@@ -22,14 +24,130 @@ import {
   getLocalDateString,
 } from './constants';
 import CalendarView from './components/CalendarView';
-import StatsView from './components/StatsView';
-import SettingsView from './components/SettingsView';
 import SplashScreen from './components/SplashScreen';
 import DetailModal from './components/DetailModal';
 import LockScreen from './components/LockScreen';
 import ChangeLog from './components/ChangeLog';
+import FaIcon from './components/FaIcon';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+
+type StatsViewModule = typeof import('./components/StatsView');
+let statsViewLoadPromise: Promise<StatsViewModule> | null = null;
+const loadStatsView = () => {
+  if (!statsViewLoadPromise) {
+    statsViewLoadPromise = import('./components/StatsView');
+  }
+  return statsViewLoadPromise;
+};
+const LazyStatsView = React.lazy(loadStatsView);
+type SettingsViewModule = typeof import('./components/SettingsView');
+let settingsViewLoadPromise: Promise<SettingsViewModule> | null = null;
+const loadSettingsView = () => {
+  if (!settingsViewLoadPromise) {
+    settingsViewLoadPromise = import('./components/SettingsView');
+  }
+  return settingsViewLoadPromise;
+};
+const LazySettingsView = React.lazy(loadSettingsView);
+
+const APP_STORAGE_KEYS = [
+  STORAGE_KEY,
+  PIN_KEY,
+  THEME_KEY,
+  ICON_KEY,
+  SOUND_KEY,
+  CUSTOM_SOUND_KEY,
+  AGE_VERIFIED_KEY,
+  LAST_EXPORT_FILE_KEY,
+  LAST_EXPORT_FILENAME_KEY,
+  SECURITY_QUESTION_KEY,
+  SECURITY_ANSWER_KEY,
+  PIN_FAILED_ATTEMPTS_KEY,
+  PIN_LOCK_UNTIL_KEY,
+  CUSTOM_BACKGROUND_KEY,
+  SAGE_MODE_DURATION_KEY,
+  SAGE_MODE_COOLDOWN_END_KEY,
+  SAGE_MODE_ENABLED_KEY,
+  BIOMETRIC_UNLOCK_ENABLED_KEY,
+] as const;
+
+const LEGACY_STORAGE_KEY_PAIRS: Array<{ next: string; legacy: string }> = [
+  { next: STORAGE_KEY, legacy: 'luleme_records' },
+  { next: PIN_KEY, legacy: 'luleme_pin' },
+  { next: THEME_KEY, legacy: 'luleme_darkmode' },
+  { next: ICON_KEY, legacy: 'luleme_custom_icon' },
+  { next: SOUND_KEY, legacy: 'luleme_sound_enabled' },
+  { next: CUSTOM_SOUND_KEY, legacy: 'luleme_custom_sound_data' },
+  { next: AGE_VERIFIED_KEY, legacy: 'luleme_age_verified' },
+  { next: SECURITY_QUESTION_KEY, legacy: 'luleme_security_question' },
+  { next: SECURITY_ANSWER_KEY, legacy: 'luleme_security_answer' },
+  { next: PIN_FAILED_ATTEMPTS_KEY, legacy: 'luleme_pin_failed_attempts' },
+  { next: PIN_LOCK_UNTIL_KEY, legacy: 'luleme_pin_lock_until' },
+  { next: CUSTOM_BACKGROUND_KEY, legacy: 'luleme_custom_background' },
+  { next: SAGE_MODE_DURATION_KEY, legacy: 'luleme_sage_mode_duration_minutes' },
+  { next: SAGE_MODE_COOLDOWN_END_KEY, legacy: 'luleme_sage_mode_cooldown_end' },
+  { next: SAGE_MODE_ENABLED_KEY, legacy: 'luleme_sage_mode_enabled' },
+  { next: BIOMETRIC_UNLOCK_ENABLED_KEY, legacy: 'luleme_biometric_unlock_enabled' },
+];
+
+function migrateLegacyStorageKeys(): void {
+  try {
+    for (const { next, legacy } of LEGACY_STORAGE_KEY_PAIRS) {
+      const legacyValue = localStorage.getItem(legacy);
+      if (legacyValue == null) continue;
+      if (localStorage.getItem(next) == null) {
+        localStorage.setItem(next, legacyValue);
+      }
+      localStorage.removeItem(legacy);
+    }
+  } catch (e) {
+    console.warn('Legacy key migration skipped:', e);
+  }
+}
+
+migrateLegacyStorageKeys();
+
+function escapeCsvCell(value: string): string {
+  const normalized = value.replace(/\r\n/g, '\n');
+  if (/[",\n\r]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+const StatsViewFallback: React.FC = () => (
+  <div className="p-4 pb-20 space-y-4 animate-pulse">
+    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-[2rem] border border-green-100 dark:border-slate-800 p-5">
+      <div className="h-5 w-28 rounded bg-green-100 dark:bg-slate-800" />
+      <div className="mt-4 h-28 rounded-2xl bg-green-50 dark:bg-slate-800/60" />
+    </div>
+    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-[2rem] border border-green-100 dark:border-slate-800 p-5">
+      <div className="h-5 w-24 rounded bg-green-100 dark:bg-slate-800" />
+      <div className="mt-4 h-40 rounded-2xl bg-green-50 dark:bg-slate-800/60" />
+    </div>
+    <div className="text-center text-xs font-bold text-green-700/80 dark:text-green-300/80">
+      正在准备统计视图...
+    </div>
+  </div>
+);
+
+const SettingsViewFallback: React.FC = () => (
+  <div className="p-4 pb-20 space-y-4 animate-pulse">
+    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-[2rem] border border-green-100 dark:border-slate-800 p-5">
+      <div className="h-5 w-24 rounded bg-green-100 dark:bg-slate-800" />
+      <div className="mt-4 h-9 rounded-xl bg-green-50 dark:bg-slate-800/60" />
+      <div className="mt-3 h-9 rounded-xl bg-green-50 dark:bg-slate-800/60" />
+    </div>
+    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm rounded-[2rem] border border-green-100 dark:border-slate-800 p-5">
+      <div className="h-5 w-28 rounded bg-green-100 dark:bg-slate-800" />
+      <div className="mt-4 h-24 rounded-2xl bg-green-50 dark:bg-slate-800/60" />
+    </div>
+    <div className="text-center text-xs font-bold text-green-700/80 dark:text-green-300/80">
+      正在准备设置视图...
+    </div>
+  </div>
+);
 
 const App: React.FC = () => {
   // 直接从 localStorage 初始化，避免闪屏
@@ -73,6 +191,7 @@ const App: React.FC = () => {
   const startTimeRef = useRef<number>(0);
   const isLongPressActive = useRef(false);
   const isCurrentlyPressing = useRef(false);
+  const toastTimerRef = useRef<number | null>(null);
   
   // Audio playback refs - Fix for sound bugs
   const audioCache = useRef<HTMLAudioElement | null>(null);
@@ -89,11 +208,144 @@ const App: React.FC = () => {
   const swipeStartX = useRef<number | null>(null);
   const swipeStartY = useRef<number | null>(null);
   const isHorizontalSwipe = useRef<boolean>(false);
+  const isSwipeBlocked = useRef<boolean>(false);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const slidesRef = useRef<HTMLDivElement | null>(null);
   const viewWidthRef = useRef<number>(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragDX, setDragDX] = useState(0);
+  const [swipeEnabled, setSwipeEnabled] = useState(true);
+
+  const resetSwipeState = useCallback((options?: { keepBlocked?: boolean }) => {
+    swipeStartX.current = null;
+    swipeStartY.current = null;
+    isHorizontalSwipe.current = false;
+    if (!options?.keepBlocked) {
+      isSwipeBlocked.current = false;
+    }
+    setIsDragging(false);
+    setDragDX(0);
+  }, []);
+
+  const blockSwipeForCurrentGesture = useCallback(() => {
+    isSwipeBlocked.current = true;
+    resetSwipeState({ keepBlocked: true });
+  }, [resetSwipeState]);
+
+  const isEditableElement = useCallback(
+    (el: Element | null) => !!el?.closest('input, textarea, select, [contenteditable], [data-disable-swipe="true"]'),
+    []
+  );
+
+  useEffect(() => {
+    const forceResetSwipe = () => {
+      resetSwipeState();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        forceResetSwipe();
+      }
+    };
+
+    const onSelectionChange = () => {
+      const active = document.activeElement instanceof Element ? document.activeElement : null;
+      if (!isEditableElement(active)) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) {
+        forceResetSwipe();
+      }
+    };
+
+    window.addEventListener('touchend', forceResetSwipe, { passive: true });
+    window.addEventListener('touchcancel', forceResetSwipe, { passive: true });
+    window.addEventListener('pointerup', forceResetSwipe, { passive: true });
+    window.addEventListener('pointercancel', forceResetSwipe, { passive: true });
+    window.addEventListener('contextmenu', forceResetSwipe);
+    window.addEventListener('resize', forceResetSwipe, { passive: true });
+    window.addEventListener('pagehide', forceResetSwipe);
+    window.addEventListener('blur', forceResetSwipe);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    document.addEventListener('selectionchange', onSelectionChange);
+
+    return () => {
+      window.removeEventListener('touchend', forceResetSwipe);
+      window.removeEventListener('touchcancel', forceResetSwipe);
+      window.removeEventListener('pointerup', forceResetSwipe);
+      window.removeEventListener('pointercancel', forceResetSwipe);
+      window.removeEventListener('contextmenu', forceResetSwipe);
+      window.removeEventListener('resize', forceResetSwipe);
+      window.removeEventListener('pagehide', forceResetSwipe);
+      window.removeEventListener('blur', forceResetSwipe);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.removeEventListener('selectionchange', onSelectionChange);
+    };
+  }, [isEditableElement, resetSwipeState]);
+
+  useEffect(() => {
+    const updateSwipeByFocus = () => {
+      const active = typeof document !== 'undefined' && document.activeElement instanceof Element ? document.activeElement : null;
+      const editing = isEditableElement(active);
+      setSwipeEnabled(!editing);
+      if (editing) resetSwipeState();
+    };
+
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (isEditableElement(target)) {
+        setSwipeEnabled(false);
+        resetSwipeState();
+      }
+    };
+
+    const onFocusOut = () => {
+      window.setTimeout(updateSwipeByFocus, 0);
+    };
+
+    document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('focusout', onFocusOut, true);
+    updateSwipeByFocus();
+    return () => {
+      document.removeEventListener('focusin', onFocusIn, true);
+      document.removeEventListener('focusout', onFocusOut, true);
+    };
+  }, [isEditableElement, resetSwipeState]);
+
+  useEffect(() => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    const preload = () => {
+      void loadStatsView();
+      settingsTimeoutId = window.setTimeout(() => {
+        void loadSettingsView();
+      }, 180);
+    };
+
+    let idleId: number | null = null;
+    let timeoutId: number | null = null;
+    let settingsTimeoutId: number | null = null;
+
+    if (typeof idleWindow.requestIdleCallback === 'function') {
+      idleId = idleWindow.requestIdleCallback(preload, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(preload, 600);
+    }
+
+    return () => {
+      if (idleId != null && typeof idleWindow.cancelIdleCallback === 'function') {
+        idleWindow.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (settingsTimeoutId != null) {
+        window.clearTimeout(settingsTimeoutId);
+      }
+    };
+  }, []);
 
   // Load Initial Data
   useEffect(() => {
@@ -155,8 +407,23 @@ const App: React.FC = () => {
   }, []);
 
   const showToast = useCallback((message: string) => {
+    if (toastTimerRef.current != null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     setToast(message);
-    setTimeout(() => setToast(null), 3000);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current != null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
   }, []);
 
   const formatSageCountdown = useCallback((remainingMs: number) => {
@@ -429,20 +696,62 @@ const App: React.FC = () => {
 
   // Helpers for swipe navigation
   const setViewByIndex = (i: number) => {
+    if (i === 1) {
+      void loadStatsView();
+    }
+    if (i === 2) {
+      void loadSettingsView();
+    }
     setCurrentView(i === 0 ? 'calendar' : i === 1 ? 'stats' : 'settings');
   };
 
+  const isEditableTouchTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return isEditableElement(target);
+  };
+
   const handleSwipeStart = (e: React.TouchEvent) => {
+    const swipeGestureEnabled = swipeEnabled && currentView !== 'settings';
+    if (!swipeGestureEnabled) {
+      resetSwipeState();
+      return;
+    }
+
+    const hasFocusedEditable =
+      typeof document !== 'undefined' &&
+      document.activeElement instanceof Element &&
+      isEditableElement(document.activeElement);
+
+    if (isEditableTouchTarget(e.target) || hasFocusedEditable) {
+      blockSwipeForCurrentGesture();
+      return;
+    }
+
+    isSwipeBlocked.current = false;
     const t = e.touches[0];
     swipeStartX.current = t.clientX;
     swipeStartY.current = t.clientY;
     isHorizontalSwipe.current = false;
-    viewWidthRef.current = mainRef.current?.offsetWidth || window.innerWidth;
+    viewWidthRef.current = mainRef.current?.offsetWidth || window.innerWidth || 360;
     setDragDX(0);
     setIsDragging(false);
   };
 
   const handleSwipeMove = (e: React.TouchEvent) => {
+    const swipeGestureEnabled = swipeEnabled && currentView !== 'settings';
+    if (!swipeGestureEnabled) {
+      resetSwipeState();
+      return;
+    }
+    if (isSwipeBlocked.current) return;
+    const hasFocusedEditable =
+      typeof document !== 'undefined' &&
+      document.activeElement instanceof Element &&
+      isEditableElement(document.activeElement);
+    if (isEditableTouchTarget(e.target) || hasFocusedEditable) {
+      blockSwipeForCurrentGesture();
+      return;
+    }
     if (swipeStartX.current == null || swipeStartY.current == null) return;
     const t = e.touches[0];
     const dx = t.clientX - swipeStartX.current;
@@ -456,19 +765,32 @@ const App: React.FC = () => {
     if (isHorizontalSwipe.current) {
       // Follow finger; disable default scroll
       e.preventDefault();
+      const viewWidth = viewWidthRef.current || mainRef.current?.offsetWidth || window.innerWidth || 360;
+      const maxDrag = viewWidth * 0.92;
+      const clampedDX = Math.max(-maxDrag, Math.min(maxDrag, dx));
       setIsDragging(true);
-      setDragDX(dx);
+      setDragDX(clampedDX);
     }
   };
 
   const handleSwipeEnd = (e: React.TouchEvent) => {
+    const swipeGestureEnabled = swipeEnabled && currentView !== 'settings';
+    if (!swipeGestureEnabled) {
+      resetSwipeState();
+      return;
+    }
+    if (isSwipeBlocked.current) {
+      resetSwipeState();
+      return;
+    }
     if (swipeStartX.current == null || swipeStartY.current == null) return;
     const t = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e.touches[0];
     const endX = t ? t.clientX : swipeStartX.current;
     const endY = t ? t.clientY : swipeStartY.current;
     const dx = (endX as number) - (swipeStartX.current as number);
     const dy = (endY as number) - (swipeStartY.current as number);
-    const threshold = Math.max(60, viewWidthRef.current * 0.2); // min distance to trigger
+    const viewWidth = viewWidthRef.current || mainRef.current?.offsetWidth || window.innerWidth || 360;
+    const threshold = Math.max(60, viewWidth * 0.2); // min distance to trigger
 
     if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy)) {
       const index = getViewIndex();
@@ -476,11 +798,11 @@ const App: React.FC = () => {
       setViewByIndex(nextIndex);
     }
 
-    swipeStartX.current = null;
-    swipeStartY.current = null;
-    isHorizontalSwipe.current = false;
-    setIsDragging(false);
-    setDragDX(0);
+    resetSwipeState();
+  };
+
+  const handleSwipeCancel = () => {
+    resetSwipeState();
   };
 
   const handleCancelPress = useCallback(() => {
@@ -493,8 +815,8 @@ const App: React.FC = () => {
     // 1. 设置清除中标识，防止 Effect 触发写回 localStorage
     setIsClearing(true);
     
-    // 2. 清空物理存储
-    localStorage.clear();
+    // 2. 仅清理本应用使用的 Key，避免误删同域其他数据
+    APP_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
     
     // 3. 重置内存中的所有状态到初始值
     setRecords([]);
@@ -511,9 +833,6 @@ const App: React.FC = () => {
     setIsLocked(false);
     setCurrentView('calendar');
     
-    localStorage.removeItem(LAST_EXPORT_FILE_KEY);
-    localStorage.removeItem(LAST_EXPORT_FILENAME_KEY);
-
     setTimeout(() => {
       setShowSplash(true);
       setIsClearing(false);
@@ -529,22 +848,30 @@ const App: React.FC = () => {
 
     try {
       // 生成 CSV 内容
-      const csvContent = "ID,Timestamp,Date,Time,Mood,Note\n" 
-        + records.map(r => {
-          const d = new Date(r.timestamp);
-          const mood = r.mood || '放松';
-          const note = r.note ? r.note.replace(/,/g, ' ') : '';
-          return `${r.id},${r.timestamp},${getLocalDateString(d)},${d.toLocaleTimeString()},${mood},${note}`;
-        }).join("\n");
+      const csvHeader = ['ID', 'Timestamp', 'Date', 'Time', 'Mood', 'Note'].join(',');
+      const csvRows = records.map((r) => {
+        const d = new Date(r.timestamp);
+        const mood = r.mood || '放松';
+        const note = r.note ?? '';
+        return [
+          escapeCsvCell(r.id),
+          String(r.timestamp),
+          getLocalDateString(d),
+          escapeCsvCell(d.toLocaleTimeString()),
+          escapeCsvCell(mood),
+          escapeCsvCell(note),
+        ].join(',');
+      });
+      const csvContent = `${csvHeader}\n${csvRows.join('\n')}`;
       
       const filename = `lulemo_export_${getLocalDateString()}.csv`;
       
       try {
-        // 先尝试创建 Download/lululu 文件夹（如果不存在）
+        // 优先写入应用文档目录，兼容新 Android 存储策略
         try {
           await Filesystem.mkdir({
-            path: 'Download/lululu',
-            directory: Directory.ExternalStorage,
+            path: 'lulemo',
+            directory: Directory.Documents,
             recursive: true
           });
         } catch {
@@ -552,9 +879,9 @@ const App: React.FC = () => {
         }
 
         const result = await Filesystem.writeFile({
-          path: `Download/lululu/${filename}`,
+          path: `lulemo/${filename}`,
           data: csvContent,
-          directory: Directory.ExternalStorage,
+          directory: Directory.Documents,
           encoding: Encoding.UTF8,
         });
         
@@ -563,8 +890,7 @@ const App: React.FC = () => {
         localStorage.setItem(LAST_EXPORT_FILE_KEY, result.uri);
         localStorage.setItem(LAST_EXPORT_FILENAME_KEY, filename);
         
-        // 简化提示信息
-        showToast(`✨ 已保存\n📁 Download/lululu\n📄 ${filename}`);
+        showToast(`✨ 已保存\n📁 Documents/lulemo\n📄 ${filename}`);
         
       } catch (fsError: unknown) {
         const msg = fsError instanceof Error ? fsError.message : '';
@@ -631,6 +957,8 @@ const App: React.FC = () => {
     localStorage.removeItem(PIN_KEY);
     localStorage.removeItem(SECURITY_QUESTION_KEY);
     localStorage.removeItem(SECURITY_ANSWER_KEY);
+    localStorage.removeItem(PIN_FAILED_ATTEMPTS_KEY);
+    localStorage.removeItem(PIN_LOCK_UNTIL_KEY);
     setCurrentPin(null);
     setBiometricUnlockEnabled(false);
     setShowRemovePinConfirm(false);
@@ -649,6 +977,12 @@ const App: React.FC = () => {
       default: return 0;
     }
   };
+
+  const viewWidth = viewWidthRef.current || mainRef.current?.offsetWidth || window.innerWidth || 360;
+  const dragTranslatePx = Math.max(
+    -2 * viewWidth,
+    Math.min(0, -(getViewIndex() * viewWidth) + dragDX)
+  );
 
   return (
     <div
@@ -670,8 +1004,31 @@ const App: React.FC = () => {
             : undefined),
         }}
       >
-        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 flex justify-between items-center border-b border-green-100 dark:border-slate-800 z-10 shrink-0 transition-all duration-500 ease-linear"
-                style={{ transitionProperty: 'background-color, border-color, color' }}>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none shrink-0 z-10 forest-bg"
+          style={{
+            height: 'env(safe-area-inset-top, 0px)',
+            ...(customBackground
+              ? {
+                  backgroundImage: darkMode
+                    ? `linear-gradient(rgba(10,15,11,0.92), rgba(13,22,15,0.88)), url(${customBackground})`
+                    : `linear-gradient(rgba(241,248,233,0.88), rgba(241,248,233,0.82)), url(${customBackground})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center top',
+                  backgroundAttachment: 'fixed',
+                }
+              : {
+                  backgroundPosition: 'center top',
+                }),
+          }}
+        />
+        <header
+          className="bg-[#eef6e5]/74 dark:bg-slate-900/78 backdrop-blur-md p-4 flex justify-between items-center border-b border-green-100/70 dark:border-slate-800 z-10 shrink-0 transition-all duration-500 ease-linear"
+          style={{
+            transitionProperty: 'background-color, border-color, color',
+          }}
+        >
           <h1 className="text-xl font-bold text-green-800 dark:text-green-400 flex items-center gap-2 transition-colors duration-500 ease-linear">
             <span>🦌</span> 了么
           </h1>
@@ -682,13 +1039,15 @@ const App: React.FC = () => {
             onTouchStart={handleSwipeStart}
             onTouchMove={handleSwipeMove}
             onTouchEnd={handleSwipeEnd}
+            onTouchCancel={handleSwipeCancel}
+            onContextMenu={handleSwipeCancel}
           >
           <div 
               ref={slidesRef}
               className={`flex h-full w-[300%] ${isDragging ? '' : 'transition-transform duration-500 ease-out'}`}
               style={{ 
                 transform: isDragging 
-                  ? `translateX(${-(getViewIndex() * (viewWidthRef.current || 0)) + dragDX}px)` 
+                  ? `translateX(${dragTranslatePx}px)` 
                   : `translateX(-${getViewIndex() * 33.333}%)`
               }}
           >
@@ -706,43 +1065,59 @@ const App: React.FC = () => {
               />
             </div>
             <div className="w-1/3 h-full overflow-y-auto pb-48 px-0 custom-scroll">
-              <StatsView records={records} darkMode={darkMode} />
+              <Suspense fallback={<StatsViewFallback />}>
+                <LazyStatsView records={records} darkMode={darkMode} />
+              </Suspense>
             </div>
             <div className="w-1/3 h-full overflow-y-auto pb-48 px-0 custom-scroll">
-              <SettingsView 
-                onClear={() => setShowClearConfirm(true)} 
-                records={records} 
-                darkMode={darkMode}
-                toggleDarkMode={() => setDarkMode(!darkMode)} 
-                soundEnabled={soundEnabled}
-                toggleSound={() => setSoundEnabled(!soundEnabled)}
-                onTestSound={() => playPunchSound(true)}
-                customSound={customSound}
-                setCustomSound={setCustomSound}
-                customIcon={customIcon}
-                setCustomIcon={setCustomIcon}
-                customBackground={customBackground}
-                setCustomBackground={setCustomBackground}
-                onImportRecords={(nr) => {
-                  setRecords(prev => [...prev, ...nr]);
-                  showToast(`成功导入 ${nr.length} 条数据`);
-                }}
-                onExportRequest={() => {
-                  if (records.length === 0) setShowNoDataAlert(true);
-                  else setShowExportConfirm(true);
-                }}
-                onShareExport={() => shareLastExport()}
-                onShowChangeLog={() => setShowChangeLog(true)}
-                onRemovePinRequest={() => setShowRemovePinConfirm(true)}
-                currentPin={currentPin}
-                onPinChange={(pin) => setCurrentPin(pin)}
-                biometricUnlockEnabled={biometricUnlockEnabled}
-                onBiometricUnlockEnabledChange={setBiometricUnlockEnabled}
-                sageModeEnabled={sageModeEnabled}
-                onSageModeEnabledChange={handleSageModeEnabledChange}
-                sageModeDurationMinutes={sageModeDurationMinutes}
-                onSageModeDurationChange={setSageModeDurationMinutes}
-              />
+              <Suspense fallback={<SettingsViewFallback />}>
+                <LazySettingsView
+                  onClear={() => setShowClearConfirm(true)}
+                  records={records}
+                  darkMode={darkMode}
+                  toggleDarkMode={() => setDarkMode(!darkMode)}
+                  soundEnabled={soundEnabled}
+                  toggleSound={() => setSoundEnabled(!soundEnabled)}
+                  onTestSound={() => playPunchSound(true)}
+                  customSound={customSound}
+                  setCustomSound={setCustomSound}
+                  customIcon={customIcon}
+                  setCustomIcon={setCustomIcon}
+                  customBackground={customBackground}
+                  setCustomBackground={setCustomBackground}
+                  onImportRecords={(nr) => {
+                    const seen = new Set(records.map((r) => r.id));
+                    const deduped: RecordEntry[] = [];
+                    for (const r of nr) {
+                      if (seen.has(r.id)) continue;
+                      seen.add(r.id);
+                      deduped.push(r);
+                    }
+                    setRecords((prev) => [...prev, ...deduped]);
+                    const skipped = nr.length - deduped.length;
+                    showToast(
+                      skipped > 0
+                        ? `成功导入 ${deduped.length} 条数据\n跳过重复 ${skipped} 条`
+                        : `成功导入 ${deduped.length} 条数据`
+                    );
+                  }}
+                  onExportRequest={() => {
+                    if (records.length === 0) setShowNoDataAlert(true);
+                    else setShowExportConfirm(true);
+                  }}
+                  onShareExport={() => shareLastExport()}
+                  onShowChangeLog={() => setShowChangeLog(true)}
+                  onRemovePinRequest={() => setShowRemovePinConfirm(true)}
+                  currentPin={currentPin}
+                  onPinChange={(pin) => setCurrentPin(pin)}
+                  biometricUnlockEnabled={biometricUnlockEnabled}
+                  onBiometricUnlockEnabledChange={setBiometricUnlockEnabled}
+                  sageModeEnabled={sageModeEnabled}
+                  onSageModeEnabledChange={handleSageModeEnabledChange}
+                  sageModeDurationMinutes={sageModeDurationMinutes}
+                  onSageModeDurationChange={setSageModeDurationMinutes}
+                />
+              </Suspense>
             </div>
           </div>
         </main>
@@ -794,7 +1169,7 @@ const App: React.FC = () => {
             <div className="button-bg-circle shadow-lg ring-4 ring-white/50 dark:ring-slate-800/50">
               {isSageModeActive ? (
                 <div className="flex flex-col items-center justify-center select-none text-green-700 dark:text-green-300">
-                  <i className="fa-solid fa-clock sage-alarm-icon text-4xl mb-1"></i>
+                  <FaIcon name="clock" className="sage-alarm-icon text-4xl mb-1" />
                   <span className="sage-countdown-text text-sm font-black tracking-wider">{sageCountdownLabel}</span>
                 </div>
               ) : customIcon ? (
@@ -825,15 +1200,27 @@ const App: React.FC = () => {
 
         <nav className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-green-100 dark:border-slate-800 flex justify-around py-4 shrink-0 z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
           <button onClick={() => setCurrentView('calendar')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'calendar' ? 'text-green-600' : 'text-gray-400'}`}>
-            <i className={`fa-solid fa-calendar-days text-xl transition-transform ${currentView === 'calendar' ? 'scale-110' : ''}`}></i>
+            <FaIcon name="calendar-days" className={`text-xl transition-transform ${currentView === 'calendar' ? 'scale-110' : ''}`} />
             <span className="text-[10px] font-bold">日历</span>
           </button>
-          <button onClick={() => setCurrentView('stats')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'stats' ? 'text-green-600' : 'text-gray-400'}`}>
-            <i className={`fa-solid fa-chart-simple text-xl transition-transform ${currentView === 'stats' ? 'scale-110' : ''}`}></i>
+          <button
+            onClick={() => {
+              void loadStatsView();
+              setCurrentView('stats');
+            }}
+            className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'stats' ? 'text-green-600' : 'text-gray-400'}`}
+          >
+            <FaIcon name="chart-simple" className={`text-xl transition-transform ${currentView === 'stats' ? 'scale-110' : ''}`} />
             <span className="text-[10px] font-bold">统计</span>
           </button>
-          <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'settings' ? 'text-green-600' : 'text-gray-400'}`}>
-            <i className={`fa-solid fa-gear text-xl transition-transform ${currentView === 'settings' ? 'scale-110' : ''}`}></i>
+          <button
+            onClick={() => {
+              void loadSettingsView();
+              setCurrentView('settings');
+            }}
+            className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'settings' ? 'text-green-600' : 'text-gray-400'}`}
+          >
+            <FaIcon name="gear" className={`text-xl transition-transform ${currentView === 'settings' ? 'scale-110' : ''}`} />
             <span className="text-[10px] font-bold">设置</span>
           </button>
         </nav>
@@ -841,7 +1228,7 @@ const App: React.FC = () => {
         {toast && (
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-4 fade-in duration-300">
             <div className="bg-green-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-start gap-3 border border-green-500/50 backdrop-blur-sm max-w-xs">
-              <i className="fa-solid fa-circle-check mt-0.5 flex-shrink-0"></i>
+              <FaIcon name="circle-check" className="mt-0.5 flex-shrink-0" />
               <span className="text-sm font-bold whitespace-pre-line leading-relaxed">{toast}</span>
             </div>
           </div>
@@ -982,6 +1369,8 @@ const App: React.FC = () => {
               localStorage.removeItem(PIN_KEY);
               localStorage.removeItem(SECURITY_QUESTION_KEY);
               localStorage.removeItem(SECURITY_ANSWER_KEY);
+              localStorage.removeItem(PIN_FAILED_ATTEMPTS_KEY);
+              localStorage.removeItem(PIN_LOCK_UNTIL_KEY);
               setCurrentPin(null);
               setBiometricUnlockEnabled(false);
               setIsLocked(false);

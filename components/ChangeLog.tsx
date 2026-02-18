@@ -31,6 +31,29 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
 
   const changes = [
     {
+      version: '1.6.1',
+      date: '2026-02-18',
+      title: '本轮对话改动汇总（安全、离线、稳定性）',
+      items: [
+        '🆕 新增：PIN 防爆破机制（失败次数限制 + 30 秒临时锁定），并持久化锁定状态',
+        '🆕 新增：设置页“访问官网”入口，支持跳转 https://lulemo-web.pages.dev/',
+        '🆕 新增：背景图链接可用性检测流程（协议校验、加载校验、候选后缀探测）',
+        '✨ 优化：品牌命名统一为 lulemo，并补充旧 key 到新 key 的兼容迁移',
+        '✨ 优化：PIN 与安全问题答案改为哈希存储，移除“忘记 PIN 直接展示原 PIN”逻辑',
+        '✨ 优化：localStorage 清理策略由 clear() 改为仅清理应用自身 key',
+        '✨ 优化：CSV 导入导出健壮性（转义、解析增强、按 id 去重）',
+        '✨ 优化：统计页与设置页改为懒加载 + 空闲预加载，降低主包压力',
+        '✨ 优化：移除 Font Awesome CDN / Tailwind CDN / Google Fonts 远程依赖，收敛运行时外链请求',
+        '✨ 优化：移除 importmap 远程映射，进一步降低第三方请求暴露面',
+        '✨ 优化：Android 状态栏与安全区适配，修复顶部重叠显示问题',
+        '✨ 优化：日历日期选择弹层层级，修复错层与遮挡问题',
+        '✨ 优化：锁定后数字键反馈交互，避免不可输入时仍出现按下变色',
+        '✅ 修复：默认背景图策略异常，调整为远程默认背景图并保留上传/链接自定义能力',
+        '✅ 修复：导出与分享链路在 Android 侧可用性问题（目录策略调整为 Documents/lulemo）',
+        '🧪 暂存问题：在“输入链接 -> 点击输入框外 -> 长按链接文本”路径下，仍可能触发页面异常，已标记继续专项修复',
+      ]
+    },
+    {
       version: '1.6.0',
       date: '2026-02-08',
       title: '设置中心重构、贤者模式完善与解锁体验升级',
@@ -140,6 +163,13 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
     },
   ];
 
+  const CHANGE_ITEM_ICONS = ['✅', '✨', '🆕', '🧪'] as const;
+  const getChangeItemIcon = (item: string) => CHANGE_ITEM_ICONS.find((icon) => item.startsWith(icon)) ?? '✨';
+  const getChangeItemText = (item: string) => {
+    const icon = CHANGE_ITEM_ICONS.find((token) => item.startsWith(token));
+    return icon ? item.slice(icon.length).trimStart() : item;
+  };
+
   return (
     <div
       className={`fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm ${
@@ -201,9 +231,9 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
                     className="text-xs text-gray-600 dark:text-slate-400 leading-relaxed flex gap-2"
                   >
                     <span className="flex-shrink-0 w-4 text-green-600 dark:text-green-400">
-                      {item.startsWith('✅') ? '✅' : '✨'}
+                      {getChangeItemIcon(item)}
                     </span>
-                    <span>{item.replace(/^[✅✨]\s*/, '')}</span>
+                    <span>{getChangeItemText(item)}</span>
                   </li>
                 ))}
               </ul>

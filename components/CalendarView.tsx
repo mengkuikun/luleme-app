@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { RecordEntry } from '../types';
 import { getLocalDateString } from '../constants';
+import FaIcon from './FaIcon';
 
 interface Props {
   records: RecordEntry[];
@@ -115,14 +116,14 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
           className="text-lg font-bold text-green-800 dark:text-green-400 hover:text-green-600 dark:hover:text-green-300 transition-all duration-300 flex items-center gap-2 group active:scale-95"
         >
           <span className="group-hover:scale-105 transition-transform duration-300">{year}年 {month + 1}月</span>
-          <i className="fa-solid fa-calendar-day text-sm group-hover:rotate-12 group-hover:scale-110 transition-all duration-300"></i>
+          <FaIcon name="calendar-day" className="text-sm group-hover:rotate-12 group-hover:scale-110 transition-all duration-300" />
         </button>
         <div className="flex gap-2">
           <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-full text-green-700 dark:text-green-500 hover:bg-green-100 dark:hover:bg-slate-800 transition-colors">
-            <i className="fa-solid fa-chevron-left text-sm"></i>
+            <FaIcon name="chevron-left" className="text-sm" />
           </button>
           <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-full text-green-700 dark:text-green-500 hover:bg-green-100 dark:hover:bg-slate-800 transition-colors">
-            <i className="fa-solid fa-chevron-right text-sm"></i>
+            <FaIcon name="chevron-right" className="text-sm" />
           </button>
         </div>
       </div>
@@ -199,7 +200,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
               <p className="text-sm text-gray-500 dark:text-slate-400 animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: '0.15s', animationFillMode: 'both' }}>跳转到指定月份</p>
             </div>
             
-            <div className="flex gap-3 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: '0.2s', animationFillMode: 'both' }}>
+            <div className="relative z-40 flex gap-3 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: '0.2s', animationFillMode: 'both' }}>
               {/* 年份选择 */}
               <div className="flex-1 relative">
                 <button
@@ -211,10 +212,10 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
                   className="w-full p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900 border-2 border-gray-200 dark:border-slate-700 rounded-2xl text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent text-gray-800 dark:text-white transition-all duration-300 hover:border-green-300 dark:hover:border-green-600 cursor-pointer flex items-center justify-center gap-2"
                 >
                   {selectedYear}年
-                  <i className={`fa-solid fa-chevron-down text-green-500 text-sm transition-transform duration-300 ${showYearPicker ? 'rotate-180' : ''}`}></i>
+                  <FaIcon name="chevron-down" className={`text-green-500 text-sm transition-transform duration-300 ${showYearPicker ? 'rotate-180' : ''}`} />
                 </button>
                 {showYearPicker && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-green-200 dark:border-slate-700 max-h-60 overflow-y-auto z-10 animate-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-green-200 dark:border-slate-700 max-h-60 overflow-y-auto z-[70] animate-in slide-in-from-top-2 duration-200">
                     {Array.from({ length: 20 }, (_, i) => new Date().getFullYear() - 10 + i).map((y) => (
                       <button
                         key={y}
@@ -247,10 +248,10 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
                   className="w-full p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-slate-800 dark:to-slate-900 border-2 border-gray-200 dark:border-slate-700 rounded-2xl text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent text-gray-800 dark:text-white transition-all duration-300 hover:border-green-300 dark:hover:border-green-600 cursor-pointer flex items-center justify-center gap-2"
                 >
                   {selectedMonth}月
-                  <i className={`fa-solid fa-chevron-down text-green-500 text-sm transition-transform duration-300 ${showMonthPicker ? 'rotate-180' : ''}`}></i>
+                  <FaIcon name="chevron-down" className={`text-green-500 text-sm transition-transform duration-300 ${showMonthPicker ? 'rotate-180' : ''}`} />
                 </button>
                 {showMonthPicker && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-green-200 dark:border-slate-700 max-h-60 overflow-y-auto z-10 animate-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-green-200 dark:border-slate-700 max-h-60 overflow-y-auto z-[70] animate-in slide-in-from-top-2 duration-200">
                     {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                       <button
                         key={m}
@@ -273,13 +274,13 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
               </div>
             </div>
             
-            <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: '0.25s', animationFillMode: 'both' }}>
+            <div className="relative z-10 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: '0.25s', animationFillMode: 'both' }}>
               <button 
                 onClick={jumpToDate}
                 className="w-full py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold rounded-2xl shadow-lg shadow-green-500/30 transition-all duration-300 active:scale-95 hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/40 relative overflow-hidden group"
               >
                 <span className="relative z-10 flex items-center justify-center gap-2">
-                  <i className="fa-solid fa-check text-sm group-hover:scale-110 transition-transform duration-300"></i>
+                  <FaIcon name="check" className="text-sm group-hover:scale-110 transition-transform duration-300" />
                   确定
                 </span>
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)' }}></div>
@@ -292,7 +293,7 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
                 className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/30 transition-all duration-300 active:scale-95 hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/40 relative overflow-hidden group"
               >
                 <span className="relative z-10 flex items-center justify-center gap-2">
-                  <i className="fa-solid fa-home text-sm group-hover:scale-110 transition-transform duration-300"></i>
+                  <FaIcon name="home" className="text-sm group-hover:scale-110 transition-transform duration-300" />
                   回到今天
                 </span>
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)' }}></div>

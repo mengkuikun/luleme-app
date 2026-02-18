@@ -5,6 +5,7 @@ import { RecordEntry } from '../types';
 import { PIN_KEY, SECURITY_QUESTION_KEY, SECURITY_ANSWER_KEY, SECURITY_QUESTIONS } from '../constants';
 import { hashSecret } from '../utils/secret';
 import { BIOMETRY_LABEL, getBiometricAvailability } from '../utils/biometric';
+import FaIcon from './FaIcon';
 
 type CollapsibleSectionKey = 'security' | 'habit' | 'appearance' | 'data';
 type AlertState = { open: boolean; closing: boolean; title: string; message: string };
@@ -39,6 +40,51 @@ interface Props {
 }
 
 const COLLAPSIBLE_KEYS: CollapsibleSectionKey[] = ['security', 'habit', 'appearance', 'data'];
+
+function parseCsvText(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+
+    if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && text[i + 1] === '\n') i += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows;
+}
 
 const SettingsView: React.FC<Props> = ({
   onClear,
@@ -102,6 +148,7 @@ const SettingsView: React.FC<Props> = ({
   const alertCloseTimerRef = useRef<number | null>(null);
 
   const [backgroundUrlInput, setBackgroundUrlInput] = useState('');
+  const [isCheckingBackgroundUrl, setIsCheckingBackgroundUrl] = useState(false);
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
@@ -115,7 +162,7 @@ const SettingsView: React.FC<Props> = ({
     }),
     []
   );
-  const aboutKeywords = useMemo(() => ['关于', '版本', '更新', '日志', 'github'], []);
+  const aboutKeywords = useMemo(() => ['关于', '版本', '更新', '日志', 'github', '官网', '网站', 'web'], []);
 
   const sectionMatchesSearch = (key: CollapsibleSectionKey) => {
     if (!searching) return true;
@@ -334,24 +381,23 @@ const SettingsView: React.FC<Props> = ({
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string;
-        const lines = text.split('\n');
         const newRecords: RecordEntry[] = [];
+        const rows = parseCsvText(text);
+        const dataRows = rows.length > 0 ? rows.slice(1) : [];
 
-        for (let i = 1; i < lines.length; i += 1) {
-          const line = lines[i].trim();
-          if (!line) continue;
-          const match = line.match(/^([^,]+),([^,]+),([^,]+),([^,]+),([^,]*),(.*)$/);
-          if (!match) continue;
-
-          const [, id, timestamp, , , mood, note] = match;
-          if (id && timestamp && !Number.isNaN(Number(timestamp))) {
-            newRecords.push({
-              id,
-              timestamp: Number(timestamp),
-              mood: mood || '放松',
-              note: note ? note.trim() : undefined,
-            });
-          }
+        for (const columns of dataRows) {
+          if (columns.length < 2) continue;
+          const id = (columns[0] ?? '').trim();
+          const timestamp = Number(columns[1] ?? '');
+          const mood = (columns[4] ?? '').trim();
+          const note = (columns[5] ?? '').trim();
+          if (!id || Number.isNaN(timestamp)) continue;
+          newRecords.push({
+            id,
+            timestamp,
+            mood: mood || '放松',
+            note: note || undefined,
+          });
         }
 
         if (newRecords.length > 0 && onImportRecords) {
@@ -369,13 +415,99 @@ const SettingsView: React.FC<Props> = ({
     reader.readAsText(file);
   };
 
+  const loadImage = (url: string, timeoutMs = 9000) =>
+    new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      let done = false;
+      const timer = window.setTimeout(() => {
+        if (done) return;
+        done = true;
+        img.onload = null;
+        img.onerror = null;
+        reject(new Error('timeout'));
+      }, timeoutMs);
+
+      img.onload = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(timer);
+        resolve();
+      };
+      img.onerror = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(timer);
+        reject(new Error('load_error'));
+      };
+      img.src = url;
+    });
+
+  const hasImageExtension = (pathname: string) => /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(pathname);
+  const stopSwipePropagation = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  };
+
+  const applyBackgroundFromUrl = async () => {
+    const raw = backgroundUrlInput.trim();
+    if (!raw) {
+      showAppAlert('链接为空', '请先粘贴图片链接。');
+      return;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      showAppAlert('链接格式错误', '请输入完整链接（如 https://example.com/a.jpg）。');
+      return;
+    }
+
+    if (!/^https?:$/i.test(parsed.protocol)) {
+      showAppAlert('链接协议不支持', '目前仅支持 http/https 图片链接。');
+      return;
+    }
+
+    const candidates: string[] = [parsed.toString()];
+    if (!hasImageExtension(parsed.pathname)) {
+      for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+        const maybe = new URL(parsed.toString());
+        maybe.pathname = `${maybe.pathname}${ext}`;
+        candidates.push(maybe.toString());
+      }
+    }
+
+    setIsCheckingBackgroundUrl(true);
+    try {
+      let successUrl: string | null = null;
+      for (const candidate of candidates) {
+        try {
+          await loadImage(candidate);
+          successUrl = candidate;
+          break;
+        } catch {
+          // try next candidate
+        }
+      }
+
+      if (!successUrl) {
+        showAppAlert('链接不可用', '该链接无法直接加载图片。请使用图片直链（建议以 .jpg/.png/.webp 结尾）或改用“上传图片”。');
+        return;
+      }
+
+      setCustomBackground(successUrl);
+      setBackgroundUrlInput('');
+    } finally {
+      setIsCheckingBackgroundUrl(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-5">
       <h2 className="text-2xl font-bold text-green-800 dark:text-green-400">设置</h2>
 
       <div className="bg-white/80 dark:bg-slate-900/80 rounded-[1.6rem] shadow-sm border border-green-100 dark:border-slate-800 p-4 space-y-3">
         <div className="relative">
-          <i className="fa-solid fa-magnifying-glass text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 text-sm"></i>
+          <FaIcon name="magnifying-glass" className="text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 text-sm" />
           <input
             type="text"
             value={searchQuery}
@@ -408,7 +540,7 @@ const SettingsView: React.FC<Props> = ({
         <div className="bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden">
           <button type="button" onClick={() => toggleSection('security')} className="w-full px-5 py-4 flex items-center justify-between text-left">
             <h3 className="text-xs font-bold text-green-600 dark:text-green-500 uppercase tracking-wider">安全与解锁</h3>
-            <i className={`fa-solid fa-chevron-down text-green-500 transition-transform duration-300 ${isSectionOpen('security') ? 'rotate-180' : ''}`}></i>
+            <FaIcon name="chevron-down" className={`text-green-500 transition-transform duration-300 ${isSectionOpen('security') ? 'rotate-180' : ''}`} />
           </button>
           <div className={getSectionBodyClass(isSectionOpen('security'))} style={getSectionBodyStyle(isSectionOpen('security'), 980)}>
             <div className="px-5 pb-5">
@@ -416,7 +548,7 @@ const SettingsView: React.FC<Props> = ({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center">
-                      <i className="fa-solid fa-fingerprint"></i>
+                      <FaIcon name="fingerprint" />
                     </div>
                     <div>
                       <div className="font-bold text-gray-800 dark:text-slate-200">生物识别解锁</div>
@@ -449,7 +581,7 @@ const SettingsView: React.FC<Props> = ({
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-2xl flex items-center justify-center">
-                      <i className="fa-solid fa-lock"></i>
+                      <FaIcon name="lock" />
                     </div>
                     <div>
                       <div className="font-bold text-gray-800 dark:text-slate-200">PIN 码锁定</div>
@@ -500,7 +632,7 @@ const SettingsView: React.FC<Props> = ({
                         enableSecurityQuestion ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 dark:border-slate-600 text-transparent'
                       }`}
                     >
-                      <i className="fa-solid fa-check text-[10px]"></i>
+                      <FaIcon name="check" className="text-[10px]" />
                     </span>
                     <span className="text-sm font-bold text-gray-700 dark:text-slate-300">启用安全问题重置 PIN</span>
                   </button>
@@ -514,7 +646,7 @@ const SettingsView: React.FC<Props> = ({
                         className="w-full p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm font-medium text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-400 flex items-center justify-between gap-3"
                       >
                         <span className="text-left">{SECURITY_QUESTIONS.find((q) => q.id === tempSecurityQuestionId)?.label ?? SECURITY_QUESTIONS[0].label}</span>
-                        <i className={`fa-solid fa-chevron-down text-green-500 transition-transform duration-300 ${showSecurityQuestionPicker ? 'rotate-180' : ''}`}></i>
+                        <FaIcon name="chevron-down" className={`text-green-500 transition-transform duration-300 ${showSecurityQuestionPicker ? 'rotate-180' : ''}`} />
                       </button>
                       <input
                         type="text"
@@ -551,7 +683,7 @@ const SettingsView: React.FC<Props> = ({
         <div className="bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden">
           <button type="button" onClick={() => toggleSection('habit')} className="w-full px-5 py-4 flex items-center justify-between text-left">
             <h3 className="text-xs font-bold text-green-600 dark:text-green-500 uppercase tracking-wider">打卡行为与反馈</h3>
-            <i className={`fa-solid fa-chevron-down text-green-500 transition-transform duration-300 ${isSectionOpen('habit') ? 'rotate-180' : ''}`}></i>
+            <FaIcon name="chevron-down" className={`text-green-500 transition-transform duration-300 ${isSectionOpen('habit') ? 'rotate-180' : ''}`} />
           </button>
           <div className={getSectionBodyClass(isSectionOpen('habit'))} style={getSectionBodyStyle(isSectionOpen('habit'), 780)}>
             <div className="px-5 pb-5 space-y-5">
@@ -559,7 +691,7 @@ const SettingsView: React.FC<Props> = ({
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center">
-                      <i className={`fa-solid ${soundEnabled ? 'fa-volume-high' : 'fa-volume-xmark'}`}></i>
+                      <FaIcon name={soundEnabled ? 'volume-high' : 'volume-xmark'} />
                     </div>
                     <div>
                       <div className="font-bold text-gray-800 dark:text-slate-200">打卡反馈音</div>
@@ -574,10 +706,10 @@ const SettingsView: React.FC<Props> = ({
                   <div className="pt-1 flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
                     <div className="flex gap-2">
                       <button onClick={onTestSound} className="flex-1 py-2.5 bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-400 rounded-xl text-xs font-bold border border-green-100 dark:border-green-800/50 flex items-center justify-center gap-2 active:scale-95 transition-transform">
-                        <i className="fa-solid fa-play"></i>试听反馈
+                        <FaIcon name="play" />试听反馈
                       </button>
                       <button onClick={() => soundInputRef.current?.click()} className="flex-1 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform">
-                        <i className="fa-solid fa-upload"></i>上传音效
+                        <FaIcon name="upload" />上传音效
                       </button>
                     </div>
                     {customSound && (
@@ -593,7 +725,7 @@ const SettingsView: React.FC<Props> = ({
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center">
-                      <i className="fa-solid fa-hourglass-half"></i>
+                      <FaIcon name="hourglass-half" />
                     </div>
                     <div>
                       <div className="font-bold text-gray-800 dark:text-slate-200">启用贤者模式</div>
@@ -653,7 +785,7 @@ const SettingsView: React.FC<Props> = ({
         <div className="bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden">
           <button type="button" onClick={() => toggleSection('appearance')} className="w-full px-5 py-4 flex items-center justify-between text-left">
             <h3 className="text-xs font-bold text-green-600 dark:text-green-500 uppercase tracking-wider">外观与体验</h3>
-            <i className={`fa-solid fa-chevron-down text-green-500 transition-transform duration-300 ${isSectionOpen('appearance') ? 'rotate-180' : ''}`}></i>
+            <FaIcon name="chevron-down" className={`text-green-500 transition-transform duration-300 ${isSectionOpen('appearance') ? 'rotate-180' : ''}`} />
           </button>
           <div className={getSectionBodyClass(isSectionOpen('appearance'))} style={getSectionBodyStyle(isSectionOpen('appearance'), 520)}>
             <div className="px-5 pb-5 space-y-5">
@@ -707,21 +839,22 @@ const SettingsView: React.FC<Props> = ({
                     type="url"
                     placeholder="或粘贴图片链接"
                     className="flex-1 p-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-800 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400"
+                    data-disable-swipe="true"
                     value={backgroundUrlInput}
                     onChange={(e) => setBackgroundUrlInput(e.target.value)}
+                    onTouchStartCapture={stopSwipePropagation}
+                    onTouchMoveCapture={stopSwipePropagation}
+                    onTouchEndCapture={stopSwipePropagation}
+                    onPointerDownCapture={stopSwipePropagation}
+                    onContextMenuCapture={stopSwipePropagation}
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const url = backgroundUrlInput.trim();
-                      if (url) {
-                        setCustomBackground(url);
-                        setBackgroundUrlInput('');
-                      }
-                    }}
-                    className="px-4 py-2.5 bg-green-500 text-white text-xs font-bold rounded-xl shrink-0"
+                    onClick={() => void applyBackgroundFromUrl()}
+                    disabled={isCheckingBackgroundUrl}
+                    className="px-4 py-2.5 bg-green-500 text-white text-xs font-bold rounded-xl shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    使用
+                    {isCheckingBackgroundUrl ? '检测中' : '使用'}
                   </button>
                 </div>
               </div>
@@ -729,7 +862,7 @@ const SettingsView: React.FC<Props> = ({
               <div className="pt-2 border-t border-gray-100 dark:border-slate-800 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-50 dark:bg-slate-800 text-orange-600 dark:text-orange-400 rounded-2xl flex items-center justify-center">
-                    <i className="fa-solid fa-moon"></i>
+                    <FaIcon name="moon" />
                   </div>
                   <div>
                     <div className="font-bold text-gray-800 dark:text-slate-200">暗黑模式</div>
@@ -748,29 +881,29 @@ const SettingsView: React.FC<Props> = ({
         <div className="bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden">
           <button type="button" onClick={() => toggleSection('data')} className="w-full px-5 py-4 flex items-center justify-between text-left">
             <h3 className="text-xs font-bold text-green-600 dark:text-green-500 uppercase tracking-wider">数据管理</h3>
-            <i className={`fa-solid fa-chevron-down text-green-500 transition-transform duration-300 ${isSectionOpen('data') ? 'rotate-180' : ''}`}></i>
+            <FaIcon name="chevron-down" className={`text-green-500 transition-transform duration-300 ${isSectionOpen('data') ? 'rotate-180' : ''}`} />
           </button>
           <div className={getSectionBodyClass(isSectionOpen('data'))} style={getSectionBodyStyle(isSectionOpen('data'), 520)}>
             <div className="px-5 pb-5">
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <button onClick={() => onExportRequest?.()} className="flex flex-col items-center justify-center p-4 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800 rounded-2xl hover:bg-green-100 dark:hover:bg-green-900/30 transition-all group">
-                  <i className="fa-solid fa-file-export text-xl text-green-600 dark:text-green-400 mb-2 group-active:scale-90 transition-transform"></i>
+                  <FaIcon name="file-export" className="text-xl text-green-600 dark:text-green-400 mb-2 group-active:scale-90 transition-transform" />
                   <span className="text-xs font-bold text-green-800 dark:text-green-300">导出 CSV</span>
                 </button>
                 <button onClick={() => onShareExport?.()} className="flex flex-col items-center justify-center p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800 rounded-2xl hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all group">
-                  <i className="fa-solid fa-share text-xl text-purple-600 dark:text-purple-400 mb-2 group-active:scale-90 transition-transform"></i>
+                  <FaIcon name="share" className="text-xl text-purple-600 dark:text-purple-400 mb-2 group-active:scale-90 transition-transform" />
                   <span className="text-xs font-bold text-purple-800 dark:text-purple-300">分享文件</span>
                 </button>
               </div>
               <div className="grid grid-cols-1 gap-3 mb-4">
                 <button onClick={() => importInputRef.current?.click()} className="flex flex-col items-center justify-center p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all group">
-                  <i className="fa-solid fa-file-import text-xl text-blue-600 dark:text-blue-400 mb-2 group-active:scale-90 transition-transform"></i>
+                  <FaIcon name="file-import" className="text-xl text-blue-600 dark:text-blue-400 mb-2 group-active:scale-90 transition-transform" />
                   <span className="text-xs font-bold text-blue-800 dark:text-blue-300">导入 CSV</span>
                 </button>
               </div>
               <input type="file" ref={importInputRef} onChange={handleImportData} className="hidden" accept=".csv" />
               <button onClick={onClear} className="w-full p-4 flex items-center justify-center gap-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/50 rounded-2xl hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">
-                <i className="fa-solid fa-trash-arrow-up text-red-600 dark:text-red-400"></i>
+                <FaIcon name="trash-arrow-up" className="text-red-600 dark:text-red-400" />
                 <span className="text-xs font-bold text-red-600 dark:text-red-400">清除所有本地记录</span>
               </button>
             </div>
@@ -780,18 +913,38 @@ const SettingsView: React.FC<Props> = ({
 
       {showAboutSection && (
         <div className="space-y-4">
+          <a
+            href="https://lulemo-web.pages.dev/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full block bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-emerald-100 dark:border-slate-800 overflow-hidden hover:shadow-md transition-shadow"
+          >
+            <div className="p-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center">
+                  <FaIcon name="share" />
+                </div>
+                <div className="text-left">
+                  <div className="font-bold text-gray-800 dark:text-slate-200">访问官网</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400">https://lulemo-web.pages.dev/</div>
+                </div>
+              </div>
+              <FaIcon name="chevron-right" className="text-gray-400 dark:text-slate-600" />
+            </div>
+          </a>
+
           <button onClick={onShowChangeLog} className="w-full bg-white/80 dark:bg-slate-900/80 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden hover:shadow-md transition-shadow">
             <div className="p-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center">
-                  <i className="fa-solid fa-scroll"></i>
+                  <FaIcon name="scroll" />
                 </div>
                 <div className="text-left">
                   <div className="font-bold text-gray-800 dark:text-slate-200">更新日志</div>
                   <div className="text-xs text-gray-500 dark:text-slate-400">查看最新功能和修复</div>
                 </div>
               </div>
-              <i className="fa-solid fa-chevron-right text-gray-400 dark:text-slate-600"></i>
+              <FaIcon name="chevron-right" className="text-gray-400 dark:text-slate-600" />
             </div>
           </button>
 
@@ -800,7 +953,7 @@ const SettingsView: React.FC<Props> = ({
             <h4 className="font-bold text-green-900 dark:text-green-400 mb-1">关于鹿了么</h4>
             <p className="text-xs text-green-800/60 dark:text-green-400/40 mb-4">
               <a href="https://github.com/mengkuikun" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-green-700 dark:hover:text-green-300 transition-colors">
-                版本 1.6.0
+                版本 1.6.1
               </a>
             </p>
             <p className="text-xs text-green-800/80 dark:text-green-400/60 leading-relaxed italic px-4">"隐私是我们的最高准则。您的数据永远只会留在您的手机上。"</p>
@@ -820,7 +973,7 @@ const SettingsView: React.FC<Props> = ({
             <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
               <h4 className="text-base font-black text-gray-800 dark:text-slate-200">选择安全问题</h4>
               <button type="button" onClick={closeSecurityQuestionPicker} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 flex items-center justify-center" aria-label="关闭安全问题选择器">
-                <i className="fa-solid fa-xmark"></i>
+                <FaIcon name="xmark" />
               </button>
             </div>
             <div className="max-h-[55vh] overflow-y-auto">

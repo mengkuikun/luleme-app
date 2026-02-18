@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { RecordEntry } from '../types';
+import FaIcon from './FaIcon';
 
 interface Props {
   date: string;
@@ -99,7 +100,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
             onClick={isAdding && !initialAddMode ? () => setIsAdding(false) : onClose} 
             className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 transition-colors"
           >
-            <i className={`fa-solid ${isAdding && !initialAddMode ? 'fa-arrow-left' : 'fa-xmark'} text-xl`}></i>
+            <FaIcon name={isAdding && !initialAddMode ? 'arrow-left' : 'xmark'} className="text-xl" />
           </button>
         </div>
 
@@ -141,7 +142,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
               onClick={handleSave}
               className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-green-500/20 transition-all flex items-center justify-center gap-2"
             >
-              <i className="fa-solid fa-check"></i>
+              <FaIcon name="check" />
               完成记录
             </button>
           </div>
@@ -175,7 +176,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
                         disabled={deletingIds.has(record.id)}
                         className="w-8 h-8 flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50"
                       >
-                        <i className="fa-solid fa-trash-can text-sm"></i>
+                        <FaIcon name="trash-can" className="text-sm" />
                       </button>
                     </div>
                     {record.note && (
@@ -188,7 +189,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
               ) : (
                 <div className="py-12 text-center text-gray-400 dark:text-slate-600">
                   <div className="w-16 h-16 bg-gray-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 opacity-50">
-                    <i className="fa-solid fa-calendar-day text-3xl"></i>
+                    <FaIcon name="calendar-day" className="text-3xl" />
                   </div>
                   <p className="font-medium text-sm">这天还没有打卡记录哦</p>
                 </div>
@@ -199,7 +200,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
               onClick={() => setIsAdding(true)}
               className="w-full bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-600 dark:hover:bg-yellow-700 text-yellow-900 dark:text-yellow-50 font-bold py-4 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 group"
             >
-              <i className="fa-solid fa-plus group-hover:rotate-90 transition-transform"></i>
+              <FaIcon name="plus" className="group-hover:rotate-90 transition-transform" />
               补录其它心情
             </button>
           </>
