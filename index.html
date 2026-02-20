@@ -226,6 +226,28 @@
         .toast-animate {
           animation: toast-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
+
+        @keyframes sage-alarm-shake {
+          0%, 100% { transform: rotate(0deg) scale(1); }
+          20% { transform: rotate(-10deg) scale(1.04); }
+          40% { transform: rotate(10deg) scale(1.04); }
+          60% { transform: rotate(-8deg) scale(1.02); }
+          80% { transform: rotate(8deg) scale(1.02); }
+        }
+
+        @keyframes sage-countdown-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.75; transform: scale(1.06); }
+        }
+
+        .sage-alarm-icon {
+          transform-origin: 50% 20%;
+          animation: sage-alarm-shake 1.1s ease-in-out infinite;
+        }
+
+        .sage-countdown-text {
+          animation: sage-countdown-pulse 1s linear infinite;
+        }
     </style>
 <script type="importmap">
 {

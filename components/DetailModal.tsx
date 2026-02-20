@@ -7,7 +7,7 @@ interface Props {
   records: RecordEntry[];
   onClose: () => void;
   onDelete: (id: string) => void;
-  onAdd: (date: string, mood: string, note: string) => void;
+  onAdd: (date: string, mood: string, note: string) => boolean;
   darkMode?: boolean;
   initialAddMode?: boolean;
 }
@@ -33,7 +33,8 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
   }, [initialAddMode]);
 
   const handleSave = () => {
-    onAdd(date, selectedMood, note);
+    const added = onAdd(date, selectedMood, note);
+    if (!added) return;
     setIsAdding(false);
     setNote('');
     // If we were in initialAddMode (triggered by long press from main screen), close the modal after saving

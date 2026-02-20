@@ -14,6 +14,11 @@ import {
   SECURITY_QUESTION_KEY,
   SECURITY_ANSWER_KEY,
   CUSTOM_BACKGROUND_KEY,
+  SAGE_MODE_DURATION_KEY,
+  SAGE_MODE_COOLDOWN_END_KEY,
+  SAGE_MODE_ENABLED_KEY,
+  BIOMETRIC_UNLOCK_ENABLED_KEY,
+  DEFAULT_SAGE_MODE_DURATION_MINUTES,
   getLocalDateString,
 } from './constants';
 import CalendarView from './components/CalendarView';
@@ -49,6 +54,11 @@ const App: React.FC = () => {
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [currentPin, setCurrentPin] = useState<string | null>(null);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [sageModeEnabled, setSageModeEnabled] = useState(true);
+  const [sageModeDurationMinutes, setSageModeDurationMinutes] = useState(DEFAULT_SAGE_MODE_DURATION_MINUTES);
+  const [sageCooldownEndAt, setSageCooldownEndAt] = useState<number | null>(null);
+  const [biometricUnlockEnabled, setBiometricUnlockEnabled] = useState(true);
+  const [nowTs, setNowTs] = useState(Date.now());
 
   // Modals state
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -119,6 +129,23 @@ const App: React.FC = () => {
       if (savedSound !== null) {
         setSoundEnabled(savedSound === 'true');
       }
+
+      const savedSageEnabled = localStorage.getItem(SAGE_MODE_ENABLED_KEY);
+      const sageEnabledOnLoad = savedSageEnabled === null ? true : savedSageEnabled === 'true';
+      setSageModeEnabled(sageEnabledOnLoad);
+
+      const savedSageDuration = Number(localStorage.getItem(SAGE_MODE_DURATION_KEY));
+      if (Number.isFinite(savedSageDuration) && savedSageDuration >= 1) {
+        setSageModeDurationMinutes(Math.min(1440, Math.round(savedSageDuration)));
+      }
+
+      const savedCooldownEnd = Number(localStorage.getItem(SAGE_MODE_COOLDOWN_END_KEY));
+      if (sageEnabledOnLoad && Number.isFinite(savedCooldownEnd) && savedCooldownEnd > Date.now()) {
+        setSageCooldownEndAt(savedCooldownEnd);
+      }
+
+      const savedBiometricUnlock = localStorage.getItem(BIOMETRIC_UNLOCK_ENABLED_KEY);
+      setBiometricUnlockEnabled(savedBiometricUnlock === null ? true : savedBiometricUnlock === 'true');
     } catch (e) {
       console.error('❌ localStorage access failed:', e);
       // localStorage可能被禁用或已满，使用默认值
@@ -132,6 +159,29 @@ const App: React.FC = () => {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
+  const formatSageCountdown = useCallback((remainingMs: number) => {
+    const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }, []);
+
+  const sageRemainingMs = sageCooldownEndAt ? Math.max(0, sageCooldownEndAt - nowTs) : 0;
+  const isSageModeActive = sageModeEnabled && sageRemainingMs > 0;
+  const sageCountdownLabel = formatSageCountdown(sageRemainingMs);
+
+  const handleSageModeEnabledChange = useCallback((enabled: boolean) => {
+    setSageModeEnabled(enabled);
+    if (!enabled) {
+      setSageCooldownEndAt(null);
+      setNowTs(Date.now());
+    }
+  }, []);
+
   // Persist Data
   useEffect(() => {
     // CRITICAL: Stop persistence if we are in the middle of clearing
@@ -140,6 +190,9 @@ const App: React.FC = () => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
         localStorage.setItem(THEME_KEY, String(darkMode));
         localStorage.setItem(SOUND_KEY, String(soundEnabled));
+        localStorage.setItem(SAGE_MODE_ENABLED_KEY, String(sageModeEnabled));
+        localStorage.setItem(SAGE_MODE_DURATION_KEY, String(sageModeDurationMinutes));
+        localStorage.setItem(BIOMETRIC_UNLOCK_ENABLED_KEY, String(biometricUnlockEnabled));
         if (customIcon) localStorage.setItem(ICON_KEY, customIcon);
         else localStorage.removeItem(ICON_KEY);
         if (customSound) localStorage.setItem(CUSTOM_SOUND_KEY, customSound);
@@ -153,7 +206,35 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [records, darkMode, customIcon, customSound, customBackground, soundEnabled, isInitialized, isClearing, showToast]);
+  }, [records, darkMode, customIcon, customSound, customBackground, soundEnabled, sageModeEnabled, sageModeDurationMinutes, biometricUnlockEnabled, isInitialized, isClearing, showToast]);
+
+  useEffect(() => {
+    try {
+      if (sageCooldownEndAt && sageCooldownEndAt > Date.now()) {
+        localStorage.setItem(SAGE_MODE_COOLDOWN_END_KEY, String(sageCooldownEndAt));
+      } else {
+        localStorage.removeItem(SAGE_MODE_COOLDOWN_END_KEY);
+      }
+    } catch (e) {
+      console.error('Failed to persist sage mode cooldown', e);
+    }
+  }, [sageCooldownEndAt]);
+
+  useEffect(() => {
+    if (!sageCooldownEndAt) return;
+
+    const tick = () => {
+      const current = Date.now();
+      setNowTs(current);
+      if (current >= sageCooldownEndAt) {
+        setSageCooldownEndAt(null);
+      }
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [sageCooldownEndAt]);
 
   const playPunchSound = useCallback((force = false) => {
     const currentSoundEnabled = localStorage.getItem(SOUND_KEY) === 'true';
@@ -240,7 +321,12 @@ const App: React.FC = () => {
     setShowSplash(false);
   };
 
-  const addRecord = useCallback((dateStr?: string, mood?: string, note?: string) => {
+  const addRecord = useCallback((dateStr?: string, mood?: string, note?: string): boolean => {
+    if (isSageModeActive) {
+      showToast(`贤者模式中，请等待 ${sageCountdownLabel}`);
+      return false;
+    }
+
     const now = new Date();
     const targetDate = dateStr ? new Date(dateStr) : now;
     if (dateStr) {
@@ -257,7 +343,14 @@ const App: React.FC = () => {
     setStampAnimationDate(formattedDate);
     setTimeout(() => setStampAnimationDate(null), 1500);
     playPunchSound();
-  }, [playPunchSound]);
+
+    if (sageModeEnabled) {
+      const cooldownEndAt = Date.now() + sageModeDurationMinutes * 60 * 1000;
+      setSageCooldownEndAt(cooldownEndAt);
+      setNowTs(Date.now());
+    }
+    return true;
+  }, [isSageModeActive, playPunchSound, sageCountdownLabel, sageModeDurationMinutes, sageModeEnabled, showToast]);
 
   const circumference = 78 * 2 * Math.PI;
 
@@ -277,6 +370,11 @@ const App: React.FC = () => {
   }, []);
 
   const startPress = useCallback(() => {
+    if (isSageModeActive) {
+      showToast(`贤者模式中，请等待 ${sageCountdownLabel}`);
+      return;
+    }
+
     isLongPressActive.current = false;
     isCurrentlyPressing.current = true;
 
@@ -313,7 +411,7 @@ const App: React.FC = () => {
       setIsDetailOpen(true);
       isCurrentlyPressing.current = false;
     }, LONG_PRESS_THRESHOLD);
-  }, [clearTimers]);
+  }, [clearTimers, isSageModeActive, sageCountdownLabel, showToast]);
 
   const endPress = useCallback(() => {
     if (!isCurrentlyPressing.current) return;
@@ -405,6 +503,11 @@ const App: React.FC = () => {
     setCustomBackground(null);
     setDarkMode(false);
     setSoundEnabled(true);
+    setSageModeEnabled(true);
+    setSageModeDurationMinutes(DEFAULT_SAGE_MODE_DURATION_MINUTES);
+    setSageCooldownEndAt(null);
+    setBiometricUnlockEnabled(true);
+    setNowTs(Date.now());
     setIsLocked(false);
     setCurrentView('calendar');
     
@@ -529,6 +632,7 @@ const App: React.FC = () => {
     localStorage.removeItem(SECURITY_QUESTION_KEY);
     localStorage.removeItem(SECURITY_ANSWER_KEY);
     setCurrentPin(null);
+    setBiometricUnlockEnabled(false);
     setShowRemovePinConfirm(false);
     showToast('已移除 PIN 码锁定');
   };
@@ -597,6 +701,7 @@ const App: React.FC = () => {
                   setIsDetailOpen(true);
                 }}
                 stampAnimationDate={stampAnimationDate}
+                darkMode={darkMode}
                 onDatePickerOpenChange={setIsDatePickerOpen}
               />
             </div>
@@ -631,10 +736,23 @@ const App: React.FC = () => {
                 onRemovePinRequest={() => setShowRemovePinConfirm(true)}
                 currentPin={currentPin}
                 onPinChange={(pin) => setCurrentPin(pin)}
+                biometricUnlockEnabled={biometricUnlockEnabled}
+                onBiometricUnlockEnabledChange={setBiometricUnlockEnabled}
+                sageModeEnabled={sageModeEnabled}
+                onSageModeEnabledChange={handleSageModeEnabledChange}
+                sageModeDurationMinutes={sageModeDurationMinutes}
+                onSageModeDurationChange={setSageModeDurationMinutes}
               />
             </div>
           </div>
         </main>
+
+        {isDatePickerOpen && (
+          <div
+            className="absolute inset-0 z-[40] pointer-events-none bg-black/35 dark:bg-black/45 backdrop-blur-[6px] animate-in fade-in duration-300"
+            aria-hidden="true"
+          />
+        )}
 
         <div
           className={`fixed bottom-32 left-1/2 -translate-x-1/2 z-30 origin-center ${
@@ -674,22 +792,35 @@ const App: React.FC = () => {
             <div className="ripple-effect"></div>
             <div className="active-ripple"></div>
             <div className="button-bg-circle shadow-lg ring-4 ring-white/50 dark:ring-slate-800/50">
-              {customIcon ? (
+              {isSageModeActive ? (
+                <div className="flex flex-col items-center justify-center select-none text-green-700 dark:text-green-300">
+                  <i className="fa-solid fa-clock sage-alarm-icon text-4xl mb-1"></i>
+                  <span className="sage-countdown-text text-sm font-black tracking-wider">{sageCountdownLabel}</span>
+                </div>
+              ) : customIcon ? (
                 <img src={customIcon} alt="图标" className="deer-icon-img" />
               ) : (
                 <span className="text-6xl animate-pulse select-none">🦌</span>
               )}
             </div>
             <button 
+              disabled={isSageModeActive}
               onMouseDown={startPress}
               onMouseUp={endPress}
               onMouseLeave={handleCancelPress}
               onTouchStart={(e) => { e.preventDefault(); startPress(); }}
               onTouchEnd={(e) => { e.preventDefault(); endPress(); }}
-              className="absolute inset-0 z-20 rounded-full outline-none select-none touch-none"
+              className={`absolute inset-0 z-20 rounded-full outline-none select-none touch-none ${isSageModeActive ? 'cursor-not-allowed opacity-80' : ''}`}
               aria-label="打卡"
             />
           </div>
+          {isSageModeActive && (
+            <div className="mt-3 text-center">
+              <span className="inline-block px-3 py-1 rounded-full bg-amber-100/90 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-bold">
+                贤者模式中 · 剩余 {sageCountdownLabel}
+              </span>
+            </div>
+          )}
         </div>
 
         <nav className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-green-100 dark:border-slate-800 flex justify-around py-4 shrink-0 z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
@@ -846,11 +977,13 @@ const App: React.FC = () => {
         {isLocked && (
           <LockScreen
             onUnlock={() => setIsLocked(false)}
+            biometricEnabled={biometricUnlockEnabled}
             onResetPin={() => {
               localStorage.removeItem(PIN_KEY);
               localStorage.removeItem(SECURITY_QUESTION_KEY);
               localStorage.removeItem(SECURITY_ANSWER_KEY);
               setCurrentPin(null);
+              setBiometricUnlockEnabled(false);
               setIsLocked(false);
               showToast('已重置 PIN，可在设置中重新设置');
             }}
