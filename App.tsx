@@ -28,10 +28,33 @@ import SplashScreen from './components/SplashScreen';
 import DetailModal from './components/DetailModal';
 import LockScreen from './components/LockScreen';
 import ChangeLog from './components/ChangeLog';
+import AuthScreen from './components/AuthScreen';
+import LeaderboardView from './components/LeaderboardView';
+import CultivationView from './components/CultivationView';
+import AiAssistantView from './components/AiAssistantView';
+import AdminView from './components/AdminView';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import {
+  AuthUser,
+  bulkUpsertRecords,
+  clearSession,
+  createRecord as createRemoteRecord,
+  deleteRecord as deleteRemoteRecord,
+  fetchRecords,
+  getCurrentUser,
+  hasSession,
+  login as loginWithPassword,
+  logout as logoutFromApi,
+  register as registerWithPassword,
+  updateMyRegion,
+  fetchAppVersion,
+} from './utils/api';
 
 const App: React.FC = () => {
+  const previewParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const isUiPreview = previewParams.get('preview') === '1';
+  const previewRole = previewParams.get('role') === 'admin' ? 'admin' : 'user';
   // 直接从 localStorage 初始化，避免闪屏
   const isAgeVerifiedOnLoad = localStorage.getItem(AGE_VERIFIED_KEY) === 'true';
   
@@ -54,6 +77,10 @@ const App: React.FC = () => {
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [currentPin, setCurrentPin] = useState<string | null>(null);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [showRegionPrompt, setShowRegionPrompt] = useState(false);
+  const [regionInput, setRegionInput] = useState('');
   const [sageModeEnabled, setSageModeEnabled] = useState(true);
   const [sageModeDurationMinutes, setSageModeDurationMinutes] = useState(DEFAULT_SAGE_MODE_DURATION_MINUTES);
   const [sageCooldownEndAt, setSageCooldownEndAt] = useState<number | null>(null);
@@ -158,6 +185,155 @@ const App: React.FC = () => {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
   }, []);
+
+  const syncRemoteRecords = useCallback(async () => {
+    if (!hasSession()) return;
+    try {
+      const remoteRecords = await fetchRecords();
+      setRecords(remoteRecords);
+    } catch (error) {
+      console.error('Failed to fetch remote records', error);
+      showToast('云端记录加载失败，已使用本地缓存');
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      if (isUiPreview) {
+        setUser({
+          id: `preview-${previewRole}`,
+          email: previewRole === 'admin' ? 'preview-admin@lulemo.app' : 'preview-user@lulemo.app',
+          role: previewRole,
+          region: '广东省-深圳市-南山区',
+          status: 'active',
+          permissions: previewRole === 'admin' ? ['dashboard:view', 'user:view'] : ['record:self'],
+        });
+        setRecords([
+          { id: 'p1', timestamp: Date.now() - 86400000 * 2, mood: '放松', note: '预览数据' },
+          { id: 'p2', timestamp: Date.now() - 86400000, mood: '平静', note: '用于页面展示' },
+          { id: 'p3', timestamp: Date.now(), mood: '专注', note: '今日打卡' },
+        ]);
+        setIsAuthChecking(false);
+        return;
+      }
+      if (!hasSession()) {
+        setIsAuthChecking(false);
+        return;
+      }
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+        await syncRemoteRecords();
+      } catch (error) {
+        console.error('session invalid', error);
+        clearSession();
+        setUser(null);
+      } finally {
+        setIsAuthChecking(false);
+      }
+    };
+
+    void initAuth();
+  }, [isUiPreview, previewRole, syncRemoteRecords]);
+
+  useEffect(() => {
+    if (user?.role !== 'admin' && currentView === 'admin') {
+      setCurrentView('calendar');
+    }
+  }, [currentView, user?.role]);
+
+  const handleLogin = useCallback(async (email: string, password: string) => {
+    const currentUser = await loginWithPassword(email, password);
+    setUser(currentUser);
+    if (records.length > 0) {
+      await bulkUpsertRecords(records);
+    }
+    await syncRemoteRecords();
+    showToast('登录成功，已同步云端数据');
+  }, [records, showToast, syncRemoteRecords]);
+
+  const handleRegister = useCallback(async (email: string, password: string, code: string) => {
+    await registerWithPassword(email, password, code);
+    const currentUser = await loginWithPassword(email, password);
+    setUser(currentUser);
+    if (records.length > 0) {
+      await bulkUpsertRecords(records);
+    }
+    await syncRemoteRecords();
+    showToast('注册成功，欢迎使用联网版');
+  }, [records, showToast, syncRemoteRecords]);
+
+  const handleLogout = useCallback(async () => {
+    await logoutFromApi();
+    setUser(null);
+    showToast('已退出登录');
+  }, [showToast]);
+
+  useEffect(() => {
+    if (user && (!user.region || user.region === '未设置' || user.region === '未知')) {
+      setShowRegionPrompt(true);
+      setRegionInput('');
+    }
+  }, [user]);
+
+  const handleSaveRegion = useCallback(async () => {
+    if (!regionInput.trim()) {
+      showToast('请先填写地区');
+      return;
+    }
+    try {
+      await updateMyRegion(regionInput.trim());
+      setUser((prev) => (prev ? { ...prev, region: regionInput.trim() } : prev));
+      setShowRegionPrompt(false);
+      showToast('地区设置成功');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '地区更新失败');
+    }
+  }, [regionInput, showToast]);
+
+  const detectRegionAfterLogin = useCallback(async () => {
+    if (!navigator.geolocation) {
+      showToast('设备不支持定位，请手动填写地区');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&accept-language=zh-CN`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const region = [data?.address?.state, data?.address?.city, data?.address?.county].filter(Boolean).join('-') || '未知';
+        setRegionInput(region);
+      } catch {
+        showToast('定位识别失败，请手动填写');
+      }
+    }, () => showToast('定位权限被拒绝，请手动填写地区'), { timeout: 8000 });
+  }, [showToast]);
+
+  const checkInAppUpdate = useCallback(async () => {
+    try {
+      const info = await fetchAppVersion();
+      if (info.hasUpdate) {
+        showToast(`发现新版本 ${info.latestVersion}`);
+        if (info.downloadUrl) window.open(info.downloadUrl, '_blank');
+      } else {
+        showToast('当前已是最新版本');
+      }
+    } catch (e) {
+      showToast('检查更新失败');
+    }
+  }, [showToast]);
+
+  const migrateLocalRecordsToCloud = useCallback(async () => {
+    if (!user || records.length === 0) return;
+    try {
+      await bulkUpsertRecords(records);
+      await syncRemoteRecords();
+      showToast('本地记录已同步到云端');
+    } catch (error) {
+      console.error('migrate records failed', error);
+      showToast('本地记录同步失败，请稍后重试');
+    }
+  }, [records, showToast, syncRemoteRecords, user]);
 
   const formatSageCountdown = useCallback((remainingMs: number) => {
     const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -339,6 +515,12 @@ const App: React.FC = () => {
       note,
     };
     setRecords(prev => [...prev, newRecord]);
+    if (user && !isUiPreview) {
+      void createRemoteRecord(newRecord).catch((error) => {
+        console.error('Failed to save remote record', error);
+        showToast('云端保存失败，记录仅保存在本地');
+      });
+    }
     const formattedDate = getLocalDateString(targetDate);
     setStampAnimationDate(formattedDate);
     setTimeout(() => setStampAnimationDate(null), 1500);
@@ -350,7 +532,7 @@ const App: React.FC = () => {
       setNowTs(Date.now());
     }
     return true;
-  }, [isSageModeActive, playPunchSound, sageCountdownLabel, sageModeDurationMinutes, sageModeEnabled, showToast]);
+  }, [isSageModeActive, isUiPreview, playPunchSound, sageCountdownLabel, sageModeDurationMinutes, sageModeEnabled, showToast, user]);
 
   const circumference = 78 * 2 * Math.PI;
 
@@ -650,6 +832,14 @@ const App: React.FC = () => {
     }
   };
 
+  if (isAuthChecking) {
+    return <div className="min-h-screen flex items-center justify-center text-green-700">正在检查登录状态...</div>;
+  }
+
+  if (!user) {
+    return <AuthScreen onLogin={handleLogin} onRegister={handleRegister} />;
+  }
+
   return (
     <div
       className={`${darkMode ? 'dark' : ''}`}
@@ -658,6 +848,8 @@ const App: React.FC = () => {
       <div
         className="flex flex-col h-screen max-w-md mx-auto forest-bg shadow-2xl relative overflow-hidden transition-colors duration-500 ease-linear"
         style={{
+          paddingTop: 'calc(var(--safe-top, 0px) + 6px)',
+          paddingBottom: 'var(--safe-bottom, 0px)',
           transitionProperty: 'background-color, border-color, color, box-shadow',
           ...(customBackground
             ? {
@@ -670,29 +862,22 @@ const App: React.FC = () => {
             : undefined),
         }}
       >
-        <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-4 flex justify-between items-center border-b border-green-100 dark:border-slate-800 z-10 shrink-0 transition-all duration-500 ease-linear"
+        <header className="bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl px-4 py-3 flex justify-between items-center border-b border-green-100 dark:border-slate-800 z-10 shrink-0 transition-all duration-500 ease-linear shadow-sm"
                 style={{ transitionProperty: 'background-color, border-color, color' }}>
           <h1 className="text-xl font-bold text-green-800 dark:text-green-400 flex items-center gap-2 transition-colors duration-500 ease-linear">
             <span>🦌</span> 了么
           </h1>
-          <div className="text-xs text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full font-bold transition-all duration-500 ease-linear">隐私模式</div>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-xs text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-full font-bold transition-all duration-500 ease-linear">{user.email}</span>
+            <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${user.role === 'admin' ? 'bg-violet-100 text-violet-700' : 'bg-cyan-100 text-cyan-700'}`}>{user.role === 'admin' ? '管理员' : '用户端'}</span>
+            <button className="text-xs px-2 py-1 rounded bg-sky-100 text-sky-700" onClick={() => void checkInAppUpdate()}>更新</button>
+            <button className="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-700" onClick={() => void migrateLocalRecordsToCloud()}>同步</button>
+            <button className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700" onClick={() => void handleLogout()}>退出</button>
+          </div>
         </header>
 
-          <main ref={mainRef} className="flex-1 relative overflow-hidden"
-            onTouchStart={handleSwipeStart}
-            onTouchMove={handleSwipeMove}
-            onTouchEnd={handleSwipeEnd}
-          >
-          <div 
-              ref={slidesRef}
-              className={`flex h-full w-[300%] ${isDragging ? '' : 'transition-transform duration-500 ease-out'}`}
-              style={{ 
-                transform: isDragging 
-                  ? `translateX(${-(getViewIndex() * (viewWidthRef.current || 0)) + dragDX}px)` 
-                  : `translateX(-${getViewIndex() * 33.333}%)`
-              }}
-          >
-            <div className="w-1/3 h-full overflow-y-auto pb-48 px-0 custom-scroll">
+          <main className="flex-1 relative overflow-y-auto custom-scroll">
+            {currentView === 'calendar' && (
               <CalendarView 
                 records={records} 
                 onDateClick={(date) => {
@@ -704,48 +889,55 @@ const App: React.FC = () => {
                 darkMode={darkMode}
                 onDatePickerOpenChange={setIsDatePickerOpen}
               />
-            </div>
-            <div className="w-1/3 h-full overflow-y-auto pb-48 px-0 custom-scroll">
-              <StatsView records={records} darkMode={darkMode} />
-            </div>
-            <div className="w-1/3 h-full overflow-y-auto pb-48 px-0 custom-scroll">
-              <SettingsView 
-                onClear={() => setShowClearConfirm(true)} 
-                records={records} 
-                darkMode={darkMode}
-                toggleDarkMode={() => setDarkMode(!darkMode)} 
-                soundEnabled={soundEnabled}
-                toggleSound={() => setSoundEnabled(!soundEnabled)}
-                onTestSound={() => playPunchSound(true)}
-                customSound={customSound}
-                setCustomSound={setCustomSound}
-                customIcon={customIcon}
-                setCustomIcon={setCustomIcon}
-                customBackground={customBackground}
-                setCustomBackground={setCustomBackground}
-                onImportRecords={(nr) => {
-                  setRecords(prev => [...prev, ...nr]);
-                  showToast(`成功导入 ${nr.length} 条数据`);
-                }}
-                onExportRequest={() => {
-                  if (records.length === 0) setShowNoDataAlert(true);
-                  else setShowExportConfirm(true);
-                }}
-                onShareExport={() => shareLastExport()}
-                onShowChangeLog={() => setShowChangeLog(true)}
-                onRemovePinRequest={() => setShowRemovePinConfirm(true)}
-                currentPin={currentPin}
-                onPinChange={(pin) => setCurrentPin(pin)}
-                biometricUnlockEnabled={biometricUnlockEnabled}
-                onBiometricUnlockEnabledChange={setBiometricUnlockEnabled}
-                sageModeEnabled={sageModeEnabled}
-                onSageModeEnabledChange={handleSageModeEnabledChange}
-                sageModeDurationMinutes={sageModeDurationMinutes}
-                onSageModeDurationChange={setSageModeDurationMinutes}
-              />
-            </div>
-          </div>
-        </main>
+            )}
+            {currentView === 'stats' && <StatsView records={records} darkMode={darkMode} />}
+            {currentView === 'leaderboard' && <LeaderboardView />}
+            {currentView === 'cultivation' && <CultivationView />}
+            {currentView === 'ai' && <AiAssistantView />}
+            {currentView === 'settings' && (
+              <div className="pb-48 px-0">
+                <SettingsView 
+                  onClear={() => setShowClearConfirm(true)} 
+                  records={records} 
+                  darkMode={darkMode}
+                  toggleDarkMode={() => setDarkMode(!darkMode)} 
+                  soundEnabled={soundEnabled}
+                  toggleSound={() => setSoundEnabled(!soundEnabled)}
+                  onTestSound={() => playPunchSound(true)}
+                  customSound={customSound}
+                  setCustomSound={setCustomSound}
+                  customIcon={customIcon}
+                  setCustomIcon={setCustomIcon}
+                  customBackground={customBackground}
+                  setCustomBackground={setCustomBackground}
+                  onImportRecords={(nr) => {
+                    setRecords(prev => [...prev, ...nr]);
+                    if (!isUiPreview) void bulkUpsertRecords(nr).catch((error) => {
+                      console.error('bulk upload failed', error);
+                      showToast('云端导入同步失败');
+                    });
+                    showToast(`成功导入 ${nr.length} 条数据`);
+                  }}
+                  onExportRequest={() => {
+                    if (records.length === 0) setShowNoDataAlert(true);
+                    else setShowExportConfirm(true);
+                  }}
+                  onShareExport={() => shareLastExport()}
+                  onShowChangeLog={() => setShowChangeLog(true)}
+                  onRemovePinRequest={() => setShowRemovePinConfirm(true)}
+                  currentPin={currentPin}
+                  onPinChange={(pin) => setCurrentPin(pin)}
+                  biometricUnlockEnabled={biometricUnlockEnabled}
+                  onBiometricUnlockEnabledChange={setBiometricUnlockEnabled}
+                  sageModeEnabled={sageModeEnabled}
+                  onSageModeEnabledChange={handleSageModeEnabledChange}
+                  sageModeDurationMinutes={sageModeDurationMinutes}
+                  onSageModeDurationChange={setSageModeDurationMinutes}
+                />
+              </div>
+            )}
+            {currentView === 'admin' && user.role === 'admin' && <AdminView />}
+          </main>
 
         {isDatePickerOpen && (
           <div
@@ -823,20 +1015,45 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <nav className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-green-100 dark:border-slate-800 flex justify-around py-4 shrink-0 z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
+        <nav className={`bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-green-100 dark:border-slate-800 grid ${user.role === 'admin' ? 'grid-cols-7' : 'grid-cols-6'} py-3 shrink-0 z-20 shadow-[0_-8px_20px_rgba(16,185,129,0.12)]`}>
           <button onClick={() => setCurrentView('calendar')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'calendar' ? 'text-green-600' : 'text-gray-400'}`}>
-            <i className={`fa-solid fa-calendar-days text-xl transition-transform ${currentView === 'calendar' ? 'scale-110' : ''}`}></i>
-            <span className="text-[10px] font-bold">日历</span>
+            <i className="fa-solid fa-calendar-days text-lg"></i><span className="text-[10px] font-bold">日历</span>
           </button>
           <button onClick={() => setCurrentView('stats')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'stats' ? 'text-green-600' : 'text-gray-400'}`}>
-            <i className={`fa-solid fa-chart-simple text-xl transition-transform ${currentView === 'stats' ? 'scale-110' : ''}`}></i>
-            <span className="text-[10px] font-bold">统计</span>
+            <i className="fa-solid fa-chart-simple text-lg"></i><span className="text-[10px] font-bold">统计</span>
+          </button>
+          <button onClick={() => setCurrentView('leaderboard')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'leaderboard' ? 'text-green-600' : 'text-gray-400'}`}>
+            <i className="fa-solid fa-trophy text-lg"></i><span className="text-[10px] font-bold">排行</span>
+          </button>
+          <button onClick={() => setCurrentView('cultivation')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'cultivation' ? 'text-green-600' : 'text-gray-400'}`}>
+            <i className="fa-solid fa-mountain-sun text-lg"></i><span className="text-[10px] font-bold">修仙</span>
+          </button>
+          <button onClick={() => setCurrentView('ai')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'ai' ? 'text-green-600' : 'text-gray-400'}`}>
+            <i className="fa-solid fa-robot text-lg"></i><span className="text-[10px] font-bold">AI</span>
           </button>
           <button onClick={() => setCurrentView('settings')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'settings' ? 'text-green-600' : 'text-gray-400'}`}>
-            <i className={`fa-solid fa-gear text-xl transition-transform ${currentView === 'settings' ? 'scale-110' : ''}`}></i>
-            <span className="text-[10px] font-bold">设置</span>
+            <i className="fa-solid fa-gear text-lg"></i><span className="text-[10px] font-bold">设置</span>
           </button>
+          {user.role === 'admin' && (
+            <button onClick={() => setCurrentView('admin')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'admin' ? 'text-green-600' : 'text-gray-400'}`}>
+              <i className="fa-solid fa-user-shield text-lg"></i><span className="text-[10px] font-bold">管理</span>
+            </button>
+          )}
         </nav>
+
+        {showRegionPrompt && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-black/60">
+            <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-xl space-y-3">
+              <h3 className="text-lg font-bold text-green-700">设置地区</h3>
+              <p className="text-xs text-gray-500">为参与地区排行榜，请设置你的地区。可先定位后再确认。</p>
+              <input className="w-full border rounded-xl px-3 py-2" placeholder="例如：广东省-深圳市-南山区" value={regionInput} onChange={(e) => setRegionInput(e.target.value)} />
+              <div className="flex gap-2">
+                <button onClick={() => void detectRegionAfterLogin()} className="px-3 py-2 rounded bg-emerald-100 text-emerald-700 text-sm">自动定位</button>
+                <button onClick={() => void handleSaveRegion()} className="px-3 py-2 rounded bg-green-600 text-white text-sm">保存地区</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {toast && (
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-4 fade-in duration-300">
@@ -852,7 +1069,13 @@ const App: React.FC = () => {
             date={selectedDate}
             records={records.filter(r => getLocalDateString(new Date(r.timestamp)) === selectedDate)}
             onClose={() => { setIsDetailOpen(false); setForceAddMode(false); }}
-            onDelete={(id) => setRecords(prev => prev.filter(r => r.id !== id))}
+            onDelete={(id) => {
+              setRecords(prev => prev.filter(r => r.id !== id));
+              if (!isUiPreview) void deleteRemoteRecord(id).catch((error) => {
+                console.error('delete remote failed', error);
+                showToast('云端删除失败');
+              });
+            }}
             onAdd={addRecord}
             darkMode={darkMode}
             initialAddMode={forceAddMode}

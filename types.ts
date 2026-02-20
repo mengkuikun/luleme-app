@@ -6,7 +6,7 @@ export interface RecordEntry {
   mood?: string;
 }
 
-export type ViewType = 'calendar' | 'stats' | 'settings';
+export type ViewType = 'calendar' | 'stats' | 'leaderboard' | 'cultivation' | 'ai' | 'settings' | 'admin';
 
 export interface DayData {
   date: string; // YYYY-MM-DD

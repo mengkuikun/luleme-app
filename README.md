@@ -148,3 +148,106 @@ npx cap open android
 ---
 
 如果你准备开源发布，建议补充 `LICENSE` 文件并在本 README 增加 License 章节。
+
+
+## 联网版（Cloudflare）
+
+本项目可基于 Cloudflare 免费额度实现“低成本联网 + 管理后台 + AI 助手 + 应用内更新提示”。
+
+### 一、准备 Cloudflare 资源（免费）
+
+1. 创建 D1 数据库：`lulemo-network`。
+2. 把 `wrangler.toml` 里的 `database_id` 替换成你的 D1 ID。
+3. 安装依赖：
+
+```bash
+npm install
+```
+
+### 二、数据库迁移（必须按顺序）
+
+```bash
+npm run worker:d1:migrate
+```
+
+> 迁移文件依次包含：
+> - `0001_init.sql`：用户/会话/记录主表
+> - `0002_gamification_admin.sql`：角色、地区
+> - `0003_user_status_permissions.sql`：账号状态、权限
+> - `0004_email_verification.sql`：邮箱验证码
+> - `0005_email_verification_purpose.sql`：验证码用途（注册/重置密码）
+
+### 三、免费邮箱验证码注册配置（Resend 免费方案）
+
+Resend 提供免费额度，可用于验证码邮件发送：
+
+```bash
+wrangler secret put RESEND_API_KEY
+wrangler secret put RESEND_FROM
+```
+
+开发阶段可不开通邮件，使用本地调试模式（会返回开发验证码）：
+
+```toml
+DEV_BYPASS_EMAIL = "true"
+```
+
+### 四、通义千问配置（服务端代理）
+
+```bash
+wrangler secret put DASHSCOPE_API_KEY
+```
+
+可选模型：
+
+```toml
+QWEN_MODEL = "qwen-plus"
+```
+
+### 五、应用内更新配置
+
+通过 Worker 变量下发最新版本（App 内可“检查更新”）：
+
+```toml
+APP_LATEST_VERSION = "1.6.0"
+APP_DOWNLOAD_URL = "https://your-download-link"
+APP_RELEASE_NOTES = "修复与优化"
+```
+
+### 六、启动与部署
+
+本地启动 Worker：
+
+```bash
+npm run worker:dev
+```
+
+前端 `.env`：
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8787
+```
+
+本地启动前端：
+
+```bash
+npm run dev
+```
+
+部署 Worker：
+
+```bash
+npm run worker:deploy
+```
+
+### 七、已实现功能总览
+
+- 邮箱验证码注册（免费方案可用）+ 登录/登出/会话续期
+- 忘记密码：邮箱验证码重置密码（重置后旧会话自动失效）
+- 注册成功并登录进入 App 后再提醒设置地区（自动定位 + 手动填写）
+- 打卡数据云同步（D1）
+- 总榜/地区榜 + 公共统计（活跃用户、总打卡、今日打卡）
+- 成就与修仙等级系统
+- 管理员后台：角色切换、账号启停、权限模板、用户关键信息
+- 通义千问 AI 问答（服务端代理，避免前端泄露 key）
+- App 内检查更新并跳转下载链接

@@ -1,0 +1,20 @@
+name = "lulemo-network-api"
+main = "worker/src/index.ts"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lulemo-network"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+CORS_ORIGIN = "*"
+ADMIN_EMAILS = "admin@example.com"
+QWEN_MODEL = "qwen-plus"
+APP_LATEST_VERSION = "1.6.0"
+APP_DOWNLOAD_URL = ""
+APP_RELEASE_NOTES = "修复与优化"
+DEV_BYPASS_EMAIL = "false"
+# DASHSCOPE_API_KEY: wrangler secret put DASHSCOPE_API_KEY
+# RESEND_API_KEY: wrangler secret put RESEND_API_KEY
+# RESEND_FROM: wrangler secret put RESEND_FROM

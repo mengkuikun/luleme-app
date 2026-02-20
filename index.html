@@ -3,7 +3,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>鹿了么 - 记录你的小秘密</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -33,6 +33,11 @@
             transition: none !important;
         }
         
+
+        :root {
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
         body {
             font-family: 'Noto Sans SC', sans-serif;
             background-color: #F1F8E9;
