@@ -1,22 +1,22 @@
 /**
  * 应用内使用的本地存储 Key 与工具函数，统一维护避免魔法字符串
  */
-export const STORAGE_KEY = 'lulemo_records';
-export const PIN_KEY = 'lulemo_pin';
-export const THEME_KEY = 'lulemo_darkmode';
-export const ICON_KEY = 'lulemo_custom_icon';
-export const SOUND_KEY = 'lulemo_sound_enabled';
-export const CUSTOM_SOUND_KEY = 'lulemo_custom_sound_data';
-export const AGE_VERIFIED_KEY = 'lulemo_age_verified';
+export const STORAGE_KEY = 'luleme_records';
+export const PIN_KEY = 'luleme_pin';
+export const THEME_KEY = 'luleme_darkmode';
+export const ICON_KEY = 'luleme_custom_icon';
+export const SOUND_KEY = 'luleme_sound_enabled';
+export const CUSTOM_SOUND_KEY = 'luleme_custom_sound_data';
+export const AGE_VERIFIED_KEY = 'luleme_age_verified';
 export const LAST_EXPORT_FILE_KEY = 'lastExportFile';
 export const LAST_EXPORT_FILENAME_KEY = 'lastExportFilename';
-export const SECURITY_QUESTION_KEY = 'lulemo_security_question';
-export const SECURITY_ANSWER_KEY = 'lulemo_security_answer';
-export const CUSTOM_BACKGROUND_KEY = 'lulemo_custom_background';
-export const SAGE_MODE_DURATION_KEY = 'lulemo_sage_mode_duration_minutes';
-export const SAGE_MODE_COOLDOWN_END_KEY = 'lulemo_sage_mode_cooldown_end';
-export const SAGE_MODE_ENABLED_KEY = 'lulemo_sage_mode_enabled';
-export const BIOMETRIC_UNLOCK_ENABLED_KEY = 'lulemo_biometric_unlock_enabled';
+export const SECURITY_QUESTION_KEY = 'luleme_security_question';
+export const SECURITY_ANSWER_KEY = 'luleme_security_answer';
+export const CUSTOM_BACKGROUND_KEY = 'luleme_custom_background';
+export const SAGE_MODE_DURATION_KEY = 'luleme_sage_mode_duration_minutes';
+export const SAGE_MODE_COOLDOWN_END_KEY = 'luleme_sage_mode_cooldown_end';
+export const SAGE_MODE_ENABLED_KEY = 'luleme_sage_mode_enabled';
+export const BIOMETRIC_UNLOCK_ENABLED_KEY = 'luleme_biometric_unlock_enabled';
 export const DEFAULT_SAGE_MODE_DURATION_MINUTES = 30;
 
 export const SECURITY_QUESTIONS = [

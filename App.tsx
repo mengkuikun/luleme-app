@@ -202,7 +202,7 @@ const App: React.FC = () => {
       if (isUiPreview) {
         setUser({
           id: `preview-${previewRole}`,
-          email: previewRole === 'admin' ? 'preview-admin@lulemo.app' : 'preview-user@lulemo.app',
+          email: previewRole === 'admin' ? 'preview-admin@luleme.app' : 'preview-user@luleme.app',
           role: previewRole,
           region: '广东省-深圳市-南山区',
           status: 'active',
@@ -719,7 +719,7 @@ const App: React.FC = () => {
           return `${r.id},${r.timestamp},${getLocalDateString(d)},${d.toLocaleTimeString()},${mood},${note}`;
         }).join("\n");
       
-      const filename = `lulemo_export_${getLocalDateString()}.csv`;
+      const filename = `luleme_export_${getLocalDateString()}.csv`;
       
       try {
         // 先尝试创建 Download/lululu 文件夹（如果不存在）

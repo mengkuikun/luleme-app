@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="./icon.svg" width="120" alt="Lulemo Logo" />
-  <h1>鹿了么 (Lulemo)</h1>
+  <img src="./icon.svg" width="120" alt="Luleme Logo" />
+  <h1>鹿了么 (Luleme)</h1>
   <p>记录你的小秘密，追踪健康习惯</p>
 
   <p>
@@ -156,7 +156,7 @@ npx cap open android
 
 ### 一、准备 Cloudflare 资源（免费）
 
-1. 创建 D1 数据库：`lulemo-network`。
+1. 创建 D1 数据库：`luleme-network`。
 2. 把 `wrangler.toml` 里的 `database_id` 替换成你的 D1 ID。
 3. 安装依赖：
 
@@ -202,6 +202,7 @@ wrangler secret put DASHSCOPE_API_KEY
 
 ```toml
 QWEN_MODEL = "qwen-plus"
+ACCESS_TOKEN_SECRET = "a-very-long-random-secret"
 ```
 
 ### 五、应用内更新配置
@@ -251,3 +252,10 @@ npm run worker:deploy
 - 管理员后台：角色切换、账号启停、权限模板、用户关键信息
 - 通义千问 AI 问答（服务端代理，避免前端泄露 key）
 - App 内检查更新并跳转下载链接
+
+
+### 八、一次性优化清单（已落地）
+
+- 鉴权安全优化：Access Token 从可读明文改为带 HMAC-SHA256 签名的令牌，服务端对签名与过期时间双重校验。
+- 网络可靠性优化：前端请求增加 12 秒超时、GET 自动有限重试（指数退避）、并发 401 刷新收敛（单飞 refresh）。
+- 品牌命名修正：全仓 `lulemo` 更名为 `luleme`（包名、存储 key、Worker 服务名、Android 包名、文档）。

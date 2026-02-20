@@ -1,4 +1,4 @@
-package com.lulemo.app;
+package com.luleme.app;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -43,9 +43,13 @@ export interface AdminUserRow {
 }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '';
-const ACCESS_TOKEN_KEY = 'lulemo_access_token';
-const REFRESH_TOKEN_KEY = 'lulemo_refresh_token';
-const ACCESS_EXPIRES_KEY = 'lulemo_access_exp';
+const ACCESS_TOKEN_KEY = 'luleme_access_token';
+const REFRESH_TOKEN_KEY = 'luleme_refresh_token';
+const ACCESS_EXPIRES_KEY = 'luleme_access_exp';
+const REQUEST_TIMEOUT_MS = 12_000;
+const GET_RETRY_COUNT = 2;
+
+let refreshPromise: Promise<void> | null = null;
 
 function getAccessToken() { return localStorage.getItem(ACCESS_TOKEN_KEY); }
 function getRefreshToken() { return localStorage.getItem(REFRESH_TOKEN_KEY); }
@@ -55,21 +59,60 @@ function saveTokens(payload: { accessToken: string; accessExpiresAt: number; ref
   if (payload.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, payload.refreshToken);
 }
 
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('请求超时，请稍后重试');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  const method = (init.method || 'GET').toUpperCase();
   const headers = new Headers(init.headers ?? {});
   headers.set('content-type', 'application/json');
   const accessToken = getAccessToken();
   if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
-  if (response.status === 401 && retry && getRefreshToken()) {
-    await refreshSession();
-    return request<T>(path, init, false);
+
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= GET_RETRY_COUNT; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, { ...init, headers });
+      if (response.status === 401 && retry && getRefreshToken()) {
+        await refreshSession();
+        return request<T>(path, init, false);
+      }
+      if (!response.ok) {
+        if (method === 'GET' && response.status >= 500 && attempt < GET_RETRY_COUNT) {
+          await wait(300 * (attempt + 1));
+          continue;
+        }
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || '请求失败');
+      }
+      return response.json() as Promise<T>;
+    } catch (error) {
+      lastError = error;
+      if (method !== 'GET' || attempt >= GET_RETRY_COUNT) {
+        throw error instanceof Error ? error : new Error('网络异常，请稍后重试');
+      }
+      await wait(300 * (attempt + 1));
+    }
   }
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || '请求失败');
-  }
-  return response.json() as Promise<T>;
+
+  throw lastError instanceof Error ? lastError : new Error('请求失败');
 }
 
 export async function sendRegisterCode(email: string): Promise<{ devCode?: string }> {
@@ -96,17 +139,32 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 }
 
 export async function refreshSession(): Promise<void> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) throw new Error('未登录');
-  const payload = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken }),
-  });
-  if (!payload.ok) {
-    clearSession();
-    throw new Error('会话已过期');
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) throw new Error('未登录');
+
+    const payload = await fetchWithTimeout(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!payload.ok) {
+      clearSession();
+      throw new Error('会话已过期');
+    }
+
+    const data = (await payload.json()) as { accessToken: string; accessExpiresAt: number };
+    saveTokens(data);
+  })();
+
+  try {
+    await refreshPromise;
+  } finally {
+    refreshPromise = null;
   }
-  const data = (await payload.json()) as { accessToken: string; accessExpiresAt: number };
-  saveTokens(data);
 }
 
 export async function getCurrentUser(): Promise<AuthUser> {
@@ -120,7 +178,13 @@ export async function updateMyRegion(region: string): Promise<void> {
 
 export async function logout(): Promise<void> {
   const refreshToken = getRefreshToken();
-  if (refreshToken) await fetch(`${API_BASE_URL}/api/auth/logout`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken }) });
+  if (refreshToken) {
+    await fetchWithTimeout(`${API_BASE_URL}/api/auth/logout`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    }).catch(() => undefined);
+  }
   clearSession();
 }
 

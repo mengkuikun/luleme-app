@@ -10,6 +10,7 @@ interface Env {
   APP_LATEST_VERSION?: string;
   APP_DOWNLOAD_URL?: string;
   APP_RELEASE_NOTES?: string;
+  ACCESS_TOKEN_SECRET?: string;
 }
 
 type SessionUser = { userId: string; email: string };
@@ -71,15 +72,57 @@ async function hashPassword(password: string, salt?: string) {
 }
 async function verifyPassword(password: string, salt: string, hash: string) { const computed = await hashPassword(password, salt); return computed.hash === hash; }
 
-function createAccessToken(userId: string, email: string, expiresAt: number): string { return btoa(JSON.stringify({ userId, email, exp: expiresAt })); }
-function parseAccessToken(token: string): SessionUser | null {
+function b64urlEncode(bytes: Uint8Array): string {
+  return b64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+function b64urlDecode(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4;
+  return b64d(`${normalized}${padding ? '='.repeat(4 - padding) : ''}`);
+}
+
+async function hmacSign(secret: string, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  return b64urlEncode(new Uint8Array(signature));
+}
+
+async function createAccessToken(env: Env, userId: string, email: string, expiresAt: number): Promise<string> {
+  const secret = env.ACCESS_TOKEN_SECRET || 'dev-access-token-secret';
+  const payload = b64urlEncode(new TextEncoder().encode(JSON.stringify({ userId, email, exp: expiresAt })));
+  const signature = await hmacSign(secret, payload);
+  return `${payload}.${signature}`;
+}
+
+async function parseAccessToken(env: Env, token: string): Promise<SessionUser | null> {
+  const [payloadPart, signaturePart] = token.split('.');
+  if (!payloadPart || !signaturePart) return null;
+
+  const secret = env.ACCESS_TOKEN_SECRET || 'dev-access-token-secret';
+  const expectedSignature = await hmacSign(secret, payloadPart);
+  if (signaturePart !== expectedSignature) return null;
+
   try {
-    const parsed = JSON.parse(atob(token)) as { userId: string; email: string; exp: number };
+    const payloadJson = new TextDecoder().decode(b64urlDecode(payloadPart));
+    const parsed = JSON.parse(payloadJson) as { userId: string; email: string; exp: number };
     if (!parsed.userId || !parsed.email || typeof parsed.exp !== 'number' || Date.now() > parsed.exp) return null;
     return { userId: parsed.userId, email: parsed.email };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
-async function requireAuth(request: Request): Promise<SessionUser | null> { const auth=request.headers.get('authorization'); if (!auth?.startsWith('Bearer ')) return null; return parseAccessToken(auth.slice(7)); }
+
+async function requireAuth(env: Env, request: Request): Promise<SessionUser | null> {
+  const auth = request.headers.get('authorization');
+  if (!auth?.startsWith('Bearer ')) return null;
+  return parseAccessToken(env, auth.slice(7));
+}
 
 async function getUserById(env: Env, userId: string) {
   return env.DB.prepare('SELECT id, email, role, region, status, permissions FROM users WHERE id = ?').bind(userId).first<{
@@ -198,7 +241,7 @@ async function createSession(env: Env, user: { id: string; email: string; role: 
     .bind(randomId('ses'), user.id, refreshTokenHash, refreshExpiresAt, now)
     .run();
 
-  return { accessToken: createAccessToken(user.id, user.email, accessExpiresAt), accessExpiresAt, refreshToken, refreshExpiresAt, user };
+  return { accessToken: await createAccessToken(env, user.id, user.email, accessExpiresAt), accessExpiresAt, refreshToken, refreshExpiresAt, user };
 }
 
 async function register(env: Env, body: AuthBody) {
@@ -262,7 +305,7 @@ async function refresh(env: Env, request: Request) {
 
   const accessExpiresAt = now + ACCESS_TOKEN_TTL_MS;
   return json({
-    accessToken: createAccessToken(session.user_id, session.email, accessExpiresAt),
+    accessToken: await createAccessToken(env, session.user_id, session.email, accessExpiresAt),
     accessExpiresAt,
     user: { id: session.user_id, email: session.email, role: session.role, region: session.region, status: session.status, permissions: parsePermissions(session.permissions) },
   });
@@ -277,7 +320,7 @@ async function logout(env: Env, request: Request) {
 }
 
 async function getMe(env: Env, request: Request) {
-  const session = await requireAuth(request);
+  const session = await requireAuth(env, request);
   if (!session) return json({ error: '未登录' }, { status: 401 });
   const user = await getUserById(env, session.userId);
   if (!user) return json({ error: '用户不存在' }, { status: 404 });
@@ -285,7 +328,7 @@ async function getMe(env: Env, request: Request) {
 }
 
 async function updateRegion(env: Env, request: Request) {
-  const session = await requireAuth(request);
+  const session = await requireAuth(env, request);
   if (!session) return json({ error: '未登录' }, { status: 401 });
   const body = await readJson<{ region?: string }>(request);
   const region = (body?.region || '').trim().slice(0, 64);
@@ -295,14 +338,14 @@ async function updateRegion(env: Env, request: Request) {
 }
 
 async function listRecords(env: Env, request: Request) {
-  const session = await requireAuth(request);
+  const session = await requireAuth(env, request);
   if (!session) return json({ error: '未登录' }, { status: 401 });
   const rows = await env.DB.prepare('SELECT id, timestamp, mood, note FROM records WHERE user_id = ? ORDER BY timestamp DESC').bind(session.userId).all();
   return json({ records: rows.results ?? [] });
 }
-async function createRecord(env: Env, request: Request) { const session=await requireAuth(request); if(!session) return json({error:'未登录'},{status:401}); const body=await readJson<{id?:string;timestamp?:number;mood?:string;note?:string}>(request); if(!body?.id||typeof body.timestamp!=='number') return json({error:'记录参数不正确'},{status:400}); const now=Date.now(); await env.DB.prepare(`INSERT INTO records (id,user_id,timestamp,mood,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,mood=excluded.mood,note=excluded.note,updated_at=excluded.updated_at`).bind(body.id,session.userId,body.timestamp,body.mood??null,body.note??null,now,now).run(); return json({ok:true}); }
-async function bulkCreateRecords(env: Env, request: Request) { const session=await requireAuth(request); if(!session) return json({error:'未登录'},{status:401}); const body=await readJson<{records?:Array<{id:string;timestamp:number;mood?:string;note?:string}>}>(request); const records=body?.records??[]; const now=Date.now(); const stmt=env.DB.prepare(`INSERT INTO records (id,user_id,timestamp,mood,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,mood=excluded.mood,note=excluded.note,updated_at=excluded.updated_at`); for(const item of records){ if(!item?.id||typeof item.timestamp!=='number') continue; await stmt.bind(item.id,session.userId,item.timestamp,item.mood??null,item.note??null,now,now).run(); } return json({ok:true,count:records.length}); }
-async function deleteRecord(env: Env, request: Request, id: string) { const session=await requireAuth(request); if(!session) return json({error:'未登录'},{status:401}); await env.DB.prepare('DELETE FROM records WHERE id = ? AND user_id = ?').bind(id,session.userId).run(); return json({ok:true}); }
+async function createRecord(env: Env, request: Request) { const session=await requireAuth(env, request); if(!session) return json({error:'未登录'},{status:401}); const body=await readJson<{id?:string;timestamp?:number;mood?:string;note?:string}>(request); if(!body?.id||typeof body.timestamp!=='number') return json({error:'记录参数不正确'},{status:400}); const now=Date.now(); await env.DB.prepare(`INSERT INTO records (id,user_id,timestamp,mood,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,mood=excluded.mood,note=excluded.note,updated_at=excluded.updated_at`).bind(body.id,session.userId,body.timestamp,body.mood??null,body.note??null,now,now).run(); return json({ok:true}); }
+async function bulkCreateRecords(env: Env, request: Request) { const session=await requireAuth(env, request); if(!session) return json({error:'未登录'},{status:401}); const body=await readJson<{records?:Array<{id:string;timestamp:number;mood?:string;note?:string}>}>(request); const records=body?.records??[]; const now=Date.now(); const stmt=env.DB.prepare(`INSERT INTO records (id,user_id,timestamp,mood,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET timestamp=excluded.timestamp,mood=excluded.mood,note=excluded.note,updated_at=excluded.updated_at`); for(const item of records){ if(!item?.id||typeof item.timestamp!=='number') continue; await stmt.bind(item.id,session.userId,item.timestamp,item.mood??null,item.note??null,now,now).run(); } return json({ok:true,count:records.length}); }
+async function deleteRecord(env: Env, request: Request, id: string) { const session=await requireAuth(env, request); if(!session) return json({error:'未登录'},{status:401}); await env.DB.prepare('DELETE FROM records WHERE id = ? AND user_id = ?').bind(id,session.userId).run(); return json({ok:true}); }
 
 function getDateKey(ts: number) { return new Date(ts).toISOString().slice(0, 10); }
 function calcStreaks(timestamps: number[]) { if (!timestamps.length) return { currentStreak: 0, longestStreak: 0, breakDays: 0 }; const days=Array.from(new Set(timestamps.map(getDateKey))).sort(); let run=1,longest=1; for(let i=1;i<days.length;i++){ const d=(new Date(days[i]).getTime()-new Date(days[i-1]).getTime())/86400000; if(d===1){run+=1; longest=Math.max(longest,run);} else run=1; } const last=new Date(days[days.length-1]).getTime(); const breakDays=Math.max(0,Math.floor((Date.now()-last)/86400000)); let current=1; for(let i=days.length-1;i>0;i--){ const d=(new Date(days[i]).getTime()-new Date(days[i-1]).getTime())/86400000; if(d===1) current+=1; else break;} return {currentStreak:current,longestStreak:longest,breakDays}; }
@@ -310,14 +353,14 @@ function getCultivationLevel(total: number, breakDays: number) { const score=tot
 
 async function getOverallLeaderboard(env: Env) { const rows=await env.DB.prepare(`SELECT u.id,u.email,u.region,COUNT(r.id) AS total_checkins FROM users u LEFT JOIN records r ON r.user_id=u.id WHERE u.status='active' GROUP BY u.id ORDER BY total_checkins DESC, u.created_at ASC LIMIT 50`).all(); return json({leaderboard:rows.results??[]}); }
 async function getRegionLeaderboard(env: Env) { const rows=await env.DB.prepare(`SELECT u.region,COUNT(r.id) AS total_checkins,COUNT(DISTINCT u.id) AS users FROM users u LEFT JOIN records r ON r.user_id=u.id WHERE u.status='active' GROUP BY u.region ORDER BY total_checkins DESC LIMIT 100`).all(); return json({leaderboard:rows.results??[]}); }
-async function getGamification(env: Env, request: Request) { const s=await requireAuth(request); if(!s) return json({error:'未登录'},{status:401}); const rec=await env.DB.prepare('SELECT timestamp FROM records WHERE user_id = ? ORDER BY timestamp DESC').bind(s.userId).all<{timestamp:number}>(); const ts=(rec.results??[]).map(x=>Number(x.timestamp)).filter(Number.isFinite); const totalCheckins=ts.length; const {currentStreak,longestStreak,breakDays}=calcStreaks(ts); const cultivationLevel=getCultivationLevel(totalCheckins,breakDays); const achievements=[{id:'first',title:'初入江湖',unlocked:totalCheckins>=1,desc:'完成首次打卡'},{id:'total30',title:'勤学不辍',unlocked:totalCheckins>=30,desc:'累计打卡 30 次'},{id:'streak7',title:'七日连修',unlocked:currentStreak>=7,desc:'连续打卡 7 天'},{id:'streak30',title:'月圆无缺',unlocked:longestStreak>=30,desc:'最长连续打卡 30 天'},{id:'silent7',title:'闭关修炼',unlocked:breakDays>=7,desc:'连续 7 天未打卡'}]; return json({totalCheckins,currentStreak,longestStreak,breakDays,cultivationLevel,achievements}); }
+async function getGamification(env: Env, request: Request) { const s=await requireAuth(env, request); if(!s) return json({error:'未登录'},{status:401}); const rec=await env.DB.prepare('SELECT timestamp FROM records WHERE user_id = ? ORDER BY timestamp DESC').bind(s.userId).all<{timestamp:number}>(); const ts=(rec.results??[]).map(x=>Number(x.timestamp)).filter(Number.isFinite); const totalCheckins=ts.length; const {currentStreak,longestStreak,breakDays}=calcStreaks(ts); const cultivationLevel=getCultivationLevel(totalCheckins,breakDays); const achievements=[{id:'first',title:'初入江湖',unlocked:totalCheckins>=1,desc:'完成首次打卡'},{id:'total30',title:'勤学不辍',unlocked:totalCheckins>=30,desc:'累计打卡 30 次'},{id:'streak7',title:'七日连修',unlocked:currentStreak>=7,desc:'连续打卡 7 天'},{id:'streak30',title:'月圆无缺',unlocked:longestStreak>=30,desc:'最长连续打卡 30 天'},{id:'silent7',title:'闭关修炼',unlocked:breakDays>=7,desc:'连续 7 天未打卡'}]; return json({totalCheckins,currentStreak,longestStreak,breakDays,cultivationLevel,achievements}); }
 
-async function requireAdmin(env: Env, request: Request) { const s=await requireAuth(request); if(!s) return {ok:false as const,res:json({error:'未登录'},{status:401})}; const u=await getUserById(env,s.userId); if(!u||u.role!=='admin') return {ok:false as const,res:json({error:'无管理员权限'},{status:403})}; return {ok:true as const}; }
+async function requireAdmin(env: Env, request: Request) { const s=await requireAuth(env, request); if(!s) return {ok:false as const,res:json({error:'未登录'},{status:401})}; const u=await getUserById(env,s.userId); if(!u||u.role!=='admin') return {ok:false as const,res:json({error:'无管理员权限'},{status:403})}; return {ok:true as const}; }
 async function getAdminUsers(env: Env, request: Request) { const g=await requireAdmin(env,request); if(!g.ok) return g.res; const rows=await env.DB.prepare(`SELECT u.id,u.email,u.role,u.region,u.status,u.permissions,u.created_at,COUNT(r.id) AS total_checkins,MAX(r.timestamp) AS last_checkin_at,(SELECT MAX(s.created_at) FROM sessions s WHERE s.user_id=u.id) AS last_login_at FROM users u LEFT JOIN records r ON r.user_id=u.id GROUP BY u.id ORDER BY u.created_at DESC`).all(); return json({users:rows.results??[],permissionTemplates:ADMIN_PRESET_PERMISSIONS}); }
 async function updateAdminUser(env: Env, request: Request, userId: string) { const g=await requireAdmin(env,request); if(!g.ok) return g.res; const body=await readJson<{role?:string;status?:string;permissions?:string[]}>(request); if(!body) return json({error:'无效请求'},{status:400}); const role=body.role==='admin'?'admin':'user'; const status=body.status==='disabled'?'disabled':'active'; const perms=Array.isArray(body.permissions)?body.permissions.filter((x)=>typeof x==='string'):[]; await env.DB.prepare('UPDATE users SET role=?, status=?, permissions=?, updated_at=? WHERE id=?').bind(role,status,JSON.stringify(perms),Date.now(),userId).run(); return json({ok:true}); }
 
 async function askQwen(env: Env, request: Request) {
-  const s = await requireAuth(request);
+  const s = await requireAuth(env, request);
   if (!s) return json({ error: '未登录' }, { status: 401 });
   const body = await readJson<{ question?: string }>(request);
   const question = body?.question?.trim();
@@ -348,7 +391,7 @@ export default {
     const url = new URL(request.url);
     try {
       let res: Response;
-      if (url.pathname === '/api/health') res = json({ ok: true, service: 'lulemo-network-api' });
+      if (url.pathname === '/api/health') res = json({ ok: true, service: 'luleme-network-api' });
       else if (url.pathname === '/api/public/stats' && request.method === 'GET') res = await getPublicStats(env);
       else if (url.pathname === '/api/app/version' && request.method === 'GET') res = await getAppVersion(env);
       else if (url.pathname === '/api/auth/send-code' && request.method === 'POST') res = await sendRegisterCode(env, request);

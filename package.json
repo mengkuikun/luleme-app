@@ -1,5 +1,5 @@
 {
-  "name": "lulemo",
+  "name": "luleme",
   "private": true,
   "version": "1.6.0",
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy",
-    "worker:d1:migrate": "wrangler d1 migrations apply lulemo-network"
+    "worker:d1:migrate": "wrangler d1 migrations apply luleme-network"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",

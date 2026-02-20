@@ -4,7 +4,7 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "com.lulemo.app",
+  "applicationId": "com.luleme.app",
   "variantName": "release",
   "elements": [
     {
