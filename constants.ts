@@ -4,6 +4,7 @@
 export const STORAGE_KEY = 'lulemo_records';
 export const PIN_KEY = 'lulemo_pin';
 export const THEME_KEY = 'lulemo_darkmode';
+export const THEME_MODE_KEY = 'lulemo_theme_mode';
 export const ICON_KEY = 'lulemo_custom_icon';
 export const SOUND_KEY = 'lulemo_sound_enabled';
 export const CUSTOM_SOUND_KEY = 'lulemo_custom_sound_data';

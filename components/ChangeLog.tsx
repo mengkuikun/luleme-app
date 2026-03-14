@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import FaIcon from './FaIcon';
 
 interface Props {
   onClose: () => void;
@@ -48,6 +49,7 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
         '✨ 优化：Android 状态栏与安全区适配，修复顶部重叠显示问题',
         '✨ 优化：日历日期选择弹层层级，修复错层与遮挡问题',
         '✨ 优化：锁定后数字键反馈交互，避免不可输入时仍出现按下变色',
+        '✅ 修复：底部 Tab 左右滑动切换在 Android WebView 中失效的问题，回退到 1.6.0 稳定手势模型并保留输入区防误触保护',
         '✅ 修复：默认背景图策略异常，调整为远程默认背景图并保留上传/链接自定义能力',
         '✅ 修复：导出与分享链路在 Android 侧可用性问题（目录策略调整为 Documents/lulemo）',
         '🧪 暂存问题：在“输入链接 -> 点击输入框外 -> 长按链接文本”路径下，仍可能触发页面异常，已标记继续专项修复',
@@ -186,16 +188,16 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-2xl flex items-center justify-center">
-              <i className="fa-solid fa-scroll"></i>
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-green-950/85 dark:bg-green-900/50 text-green-400 border border-green-800/70 dark:border-green-700/40">
+              <FaIcon name="scroll" className="text-sm" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">更新日志</h2>
           </div>
           <button
             onClick={requestClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100/80 dark:bg-slate-800/80 text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
           >
-            <i className="fa-solid fa-xmark text-gray-500 dark:text-slate-400"></i>
+            <FaIcon name="xmark" className="text-sm" />
           </button>
         </div>
 

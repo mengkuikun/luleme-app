@@ -1,10 +1,20 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RecordEntry } from '../types';
+import { CustomBackgroundConfig, RecordEntry } from '../types';
 import { PIN_KEY, SECURITY_QUESTION_KEY, SECURITY_ANSWER_KEY, SECURITY_QUESTIONS } from '../constants';
 import { hashSecret } from '../utils/secret';
 import { BIOMETRY_LABEL, getBiometricAvailability } from '../utils/biometric';
+import { parseRecordEntriesFromCsv } from '../utils/csv';
+import { ThemeMode } from '../utils/theme';
+import {
+  buildBackgroundImageStyle,
+  DEFAULT_BACKGROUND_POSITION_X,
+  DEFAULT_BACKGROUND_POSITION_Y,
+  MAX_BACKGROUND_SCALE,
+  MIN_BACKGROUND_SCALE,
+  normalizeBackgroundConfig,
+} from '../utils/background';
 import FaIcon from './FaIcon';
 
 type CollapsibleSectionKey = 'security' | 'habit' | 'appearance' | 'data';
@@ -14,13 +24,16 @@ interface Props {
   onClear: () => void;
   records: RecordEntry[];
   darkMode: boolean;
-  toggleDarkMode: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
+  onSwipeLockChange?: (locked: boolean) => void;
+  registerBackHandler?: (handler: (() => boolean) | null) => void;
   soundEnabled: boolean;
   toggleSound: () => void;
   customIcon: string | null;
   setCustomIcon: (icon: string | null) => void;
-  customBackground: string | null;
-  setCustomBackground: (url: string | null) => void;
+  customBackground: CustomBackgroundConfig | null;
+  setCustomBackground: (config: CustomBackgroundConfig | null) => void;
   customSound: string | null;
   setCustomSound: (sound: string | null) => void;
   onImportRecords?: (newRecords: RecordEntry[]) => void;
@@ -41,56 +54,14 @@ interface Props {
 
 const COLLAPSIBLE_KEYS: CollapsibleSectionKey[] = ['security', 'habit', 'appearance', 'data'];
 
-function parseCsvText(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-
-    if (ch === '"') {
-      if (inQuotes && text[i + 1] === '"') {
-        cell += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (ch === ',' && !inQuotes) {
-      row.push(cell);
-      cell = '';
-      continue;
-    }
-
-    if ((ch === '\n' || ch === '\r') && !inQuotes) {
-      if (ch === '\r' && text[i + 1] === '\n') i += 1;
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = '';
-      continue;
-    }
-
-    cell += ch;
-  }
-
-  if (cell.length > 0 || row.length > 0) {
-    row.push(cell);
-    rows.push(row);
-  }
-
-  return rows;
-}
-
 const SettingsView: React.FC<Props> = ({
   onClear,
   records,
   darkMode,
-  toggleDarkMode,
+  themeMode,
+  onThemeModeChange,
+  onSwipeLockChange,
+  registerBackHandler,
   soundEnabled,
   toggleSound,
   customIcon,
@@ -149,6 +120,15 @@ const SettingsView: React.FC<Props> = ({
 
   const [backgroundUrlInput, setBackgroundUrlInput] = useState('');
   const [isCheckingBackgroundUrl, setIsCheckingBackgroundUrl] = useState(false);
+  const [showBackgroundEditor, setShowBackgroundEditor] = useState(false);
+  const [backgroundDraft, setBackgroundDraft] = useState<CustomBackgroundConfig | null>(null);
+  const backgroundDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startPositionX: number;
+    startPositionY: number;
+  } | null>(null);
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
@@ -295,6 +275,37 @@ const SettingsView: React.FC<Props> = ({
     }
   }, [currentPin, biometricUnlockEnabled, onBiometricUnlockEnabledChange]);
 
+  useEffect(() => {
+    if (!registerBackHandler) return undefined;
+
+    registerBackHandler(() => {
+      if (showBackgroundEditor) {
+        setShowBackgroundEditor(false);
+        setBackgroundDraft(null);
+        onSwipeLockChange?.(false);
+        return true;
+      }
+      if (alertState.open) {
+        closeAppAlert();
+        return true;
+      }
+      if (showSecurityQuestionPicker) {
+        closeSecurityQuestionPicker();
+        return true;
+      }
+      if (isSettingPin) {
+        setIsSettingPin(false);
+        setTempPin('');
+        setTempSecurityAnswer('');
+        setEnableSecurityQuestion(false);
+        return true;
+      }
+      return false;
+    });
+
+    return () => registerBackHandler(null);
+  }, [alertState.open, closeAppAlert, onSwipeLockChange, showBackgroundEditor, showSecurityQuestionPicker, isSettingPin, registerBackHandler]);
+
   const applySageDuration = (minutes: number) => {
     const next = Math.max(1, Math.min(1440, Math.round(minutes)));
     onSageModeDurationChange(next);
@@ -341,7 +352,7 @@ const SettingsView: React.FC<Props> = ({
         return;
       }
       const reader = new FileReader();
-      reader.onloadend = () => setCustomBackground(reader.result as string);
+      reader.onloadend = () => openBackgroundEditor(reader.result as string);
       reader.readAsDataURL(file);
     }
     if (e.target) e.target.value = '';
@@ -381,24 +392,7 @@ const SettingsView: React.FC<Props> = ({
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string;
-        const newRecords: RecordEntry[] = [];
-        const rows = parseCsvText(text);
-        const dataRows = rows.length > 0 ? rows.slice(1) : [];
-
-        for (const columns of dataRows) {
-          if (columns.length < 2) continue;
-          const id = (columns[0] ?? '').trim();
-          const timestamp = Number(columns[1] ?? '');
-          const mood = (columns[4] ?? '').trim();
-          const note = (columns[5] ?? '').trim();
-          if (!id || Number.isNaN(timestamp)) continue;
-          newRecords.push({
-            id,
-            timestamp,
-            mood: mood || '放松',
-            note: note || undefined,
-          });
-        }
+        const newRecords = parseRecordEntriesFromCsv(text);
 
         if (newRecords.length > 0 && onImportRecords) {
           onImportRecords(newRecords);
@@ -445,6 +439,98 @@ const SettingsView: React.FC<Props> = ({
   const hasImageExtension = (pathname: string) => /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(pathname);
   const stopSwipePropagation = (e: React.SyntheticEvent) => {
     e.stopPropagation();
+  };
+
+  const openBackgroundEditor = (src: string) => {
+    const nextDraft =
+      customBackground && customBackground.src === src
+        ? normalizeBackgroundConfig(customBackground)
+        : normalizeBackgroundConfig({ src });
+    setBackgroundDraft(nextDraft);
+    setShowBackgroundEditor(true);
+    onSwipeLockChange?.(true);
+  };
+
+  const closeBackgroundEditor = () => {
+    setShowBackgroundEditor(false);
+    setBackgroundDraft(null);
+    backgroundDragRef.current = null;
+    onSwipeLockChange?.(false);
+  };
+
+  const saveBackgroundDraft = () => {
+    if (!backgroundDraft) return;
+    setCustomBackground(normalizeBackgroundConfig(backgroundDraft));
+    closeBackgroundEditor();
+  };
+
+  const resetBackgroundDraft = () => {
+    if (!backgroundDraft) return;
+    setBackgroundDraft(normalizeBackgroundConfig({ src: backgroundDraft.src }));
+  };
+
+  const setBackgroundDraftPosition = (positionX: number, positionY: number) => {
+    setBackgroundDraft((prev) =>
+      prev
+        ? normalizeBackgroundConfig({
+            ...prev,
+            positionX,
+            positionY,
+          })
+        : prev
+    );
+  };
+
+  const nudgeBackgroundDraft = (deltaX: number, deltaY: number) => {
+    setBackgroundDraft((prev) =>
+      prev
+        ? normalizeBackgroundConfig({
+            ...prev,
+            positionX: prev.positionX + deltaX,
+            positionY: prev.positionY + deltaY,
+          })
+        : prev
+    );
+  };
+
+  const beginBackgroundDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!backgroundDraft) return;
+    backgroundDragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startPositionX: backgroundDraft.positionX,
+      startPositionY: backgroundDraft.positionY,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const moveBackgroundDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const activeDrag = backgroundDragRef.current;
+    if (!activeDrag || activeDrag.pointerId !== e.pointerId || !backgroundDraft) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const deltaX = e.clientX - activeDrag.startX;
+    const deltaY = e.clientY - activeDrag.startY;
+    const nextPositionX = Math.min(100, Math.max(0, activeDrag.startPositionX + (deltaX / Math.max(rect.width, 1)) * 100));
+    const nextPositionY = Math.min(100, Math.max(0, activeDrag.startPositionY + (deltaY / Math.max(rect.height, 1)) * 100));
+    setBackgroundDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            positionX: nextPositionX,
+            positionY: nextPositionY,
+          }
+        : prev
+    );
+  };
+
+  const endBackgroundDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (backgroundDragRef.current?.pointerId === e.pointerId) {
+      backgroundDragRef.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    }
   };
 
   const applyBackgroundFromUrl = async () => {
@@ -494,8 +580,8 @@ const SettingsView: React.FC<Props> = ({
         return;
       }
 
-      setCustomBackground(successUrl);
       setBackgroundUrlInput('');
+      openBackgroundEditor(successUrl);
     } finally {
       setIsCheckingBackgroundUrl(false);
     }
@@ -813,7 +899,12 @@ const SettingsView: React.FC<Props> = ({
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-gray-100 dark:bg-slate-800 border border-green-50 dark:border-slate-700 overflow-hidden shrink-0 shadow-inner flex items-center justify-center">
                     {customBackground ? (
-                      <img src={customBackground} alt="背景预览" className="w-full h-full object-cover" />
+                      <img
+                        src={customBackground.src}
+                        alt="背景预览"
+                        className="w-full h-full object-cover"
+                        style={buildBackgroundImageStyle(customBackground)}
+                      />
                     ) : (
                       <span className="w-full h-full flex items-center justify-center text-2xl leading-none" aria-hidden="true">
                         🖼️
@@ -824,6 +915,11 @@ const SettingsView: React.FC<Props> = ({
                     <div className="font-bold text-sm text-gray-800 dark:text-slate-200">自定义背景图</div>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => backgroundInputRef.current?.click()} className="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 transition-colors">上传图片</button>
+                      {customBackground && (
+                        <button type="button" onClick={() => openBackgroundEditor(customBackground.src)} className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold rounded-lg transition-colors">
+                          调整位置
+                        </button>
+                      )}
                       {customBackground && (
                         <button type="button" onClick={() => setCustomBackground(null)} className="px-3 py-1.5 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 text-xs font-bold rounded-lg transition-colors">
                           恢复默认
@@ -842,11 +938,22 @@ const SettingsView: React.FC<Props> = ({
                     data-disable-swipe="true"
                     value={backgroundUrlInput}
                     onChange={(e) => setBackgroundUrlInput(e.target.value)}
-                    onTouchStartCapture={stopSwipePropagation}
+                    onFocus={() => onSwipeLockChange?.(true)}
+                    onBlur={() => onSwipeLockChange?.(false)}
+                    onTouchStartCapture={(e) => {
+                      onSwipeLockChange?.(true);
+                      stopSwipePropagation(e);
+                    }}
                     onTouchMoveCapture={stopSwipePropagation}
                     onTouchEndCapture={stopSwipePropagation}
-                    onPointerDownCapture={stopSwipePropagation}
-                    onContextMenuCapture={stopSwipePropagation}
+                    onPointerDownCapture={(e) => {
+                      onSwipeLockChange?.(true);
+                      stopSwipePropagation(e);
+                    }}
+                    onContextMenuCapture={(e) => {
+                      onSwipeLockChange?.(true);
+                      stopSwipePropagation(e);
+                    }}
                   />
                   <button
                     type="button"
@@ -859,19 +966,45 @@ const SettingsView: React.FC<Props> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-100 dark:border-slate-800 flex justify-between items-center">
+              <div className="pt-2 border-t border-gray-100 dark:border-slate-800 space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-orange-50 dark:bg-slate-800 text-orange-600 dark:text-orange-400 rounded-2xl flex items-center justify-center">
                     <FaIcon name="moon" />
                   </div>
-                  <div>
-                    <div className="font-bold text-gray-800 dark:text-slate-200">暗黑模式</div>
-                    <div className="text-xs text-gray-500 dark:text-slate-400">更舒适的夜间记录体验</div>
+                  <div className="flex-1">
+                    <div className="font-bold text-gray-800 dark:text-slate-200">主题模式</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">
+                      {themeMode === 'system'
+                        ? `跟随系统变化，当前为${darkMode ? '深色' : '浅色'}`
+                        : darkMode
+                          ? '已固定为深色模式'
+                          : '已固定为浅色模式'}
+                    </div>
                   </div>
                 </div>
-                <button type="button" onClick={toggleDarkMode} className={`w-14 h-8 rounded-full transition-colors duration-500 ease-linear relative ${darkMode ? 'bg-green-500' : 'bg-gray-300 dark:bg-slate-700'}`}>
-                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${darkMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
-                </button>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { key: 'light', label: '浅色' },
+                    { key: 'dark', label: '深色' },
+                    { key: 'system', label: '跟随系统' },
+                  ] as const).map((option) => {
+                    const active = themeMode === option.key;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => onThemeModeChange(option.key)}
+                        className={`rounded-2xl border px-3 py-3 text-sm font-bold transition-all ${
+                          active
+                            ? 'border-green-500 bg-green-50 text-green-700 shadow-[0_10px_30px_rgba(34,197,94,0.12)] dark:bg-green-900/20 dark:text-green-300'
+                            : 'border-gray-200 bg-white/70 text-gray-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -959,6 +1092,231 @@ const SettingsView: React.FC<Props> = ({
             <p className="text-xs text-green-800/80 dark:text-green-400/60 leading-relaxed italic px-4">"隐私是我们的最高准则。您的数据永远只会留在您的手机上。"</p>
           </div>
         </div>
+      )}
+
+      {showBackgroundEditor && backgroundDraft && typeof document !== 'undefined' && createPortal(
+        <div className={`${darkMode ? 'dark ' : ''}fixed inset-0 z-[10001] bg-[#eff6e8] dark:bg-slate-950`}>
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <img
+              src={backgroundDraft.src}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-25 dark:opacity-20"
+              style={buildBackgroundImageStyle(backgroundDraft)}
+            />
+            <div className={`absolute inset-0 ${darkMode ? 'bg-slate-950/82' : 'bg-[#eff6e8]/90'}`} />
+          </div>
+
+          <div className="relative flex h-full flex-col">
+            <div style={{ height: 'env(safe-area-inset-top, 0px)' }} />
+
+            <header className="shrink-0 border-b border-white/60 bg-white/82 px-5 py-4 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-950/82">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closeBackgroundEditor}
+                  className="inline-flex h-11 min-w-11 items-center justify-center rounded-2xl bg-gray-100 px-3 text-gray-700 transition-colors dark:bg-slate-800 dark:text-slate-200"
+                  aria-label="返回背景图编辑"
+                >
+                  <FaIcon name="arrow-left" />
+                </button>
+                <div className="min-w-0 flex-1 text-center">
+                  <h4 className="text-base font-black text-gray-900 dark:text-slate-100">调整背景图</h4>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">像相册裁切一样，拖拽取景后再保存</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={saveBackgroundDraft}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-green-500 px-4 text-sm font-bold text-white shadow-lg shadow-green-500/25 transition-transform active:scale-[0.98]"
+                >
+                  保存
+                </button>
+              </div>
+            </header>
+
+            <div className="flex-1 overflow-y-auto px-5 pb-[calc(env(safe-area-inset-bottom,0px)+120px)] pt-5">
+              <div className="mx-auto w-full max-w-md space-y-5">
+                <section className="rounded-[2rem] border border-white/70 bg-white/82 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/82">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h5 className="text-sm font-black text-gray-900 dark:text-slate-100">实时预览</h5>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">拖拽画面调整焦点，预览效果会和首页保持一致</p>
+                    </div>
+                    <span className="rounded-full bg-green-50 px-3 py-1 text-[11px] font-bold text-green-700 dark:bg-green-900/20 dark:text-green-300">
+                      {Math.round(backgroundDraft.positionX)}% / {Math.round(backgroundDraft.positionY)}%
+                    </span>
+                  </div>
+
+                  <div
+                    className="relative mx-auto w-full max-w-[300px] overflow-hidden rounded-[2.25rem] border border-green-100 bg-[#eef6e5] shadow-inner touch-none select-none dark:border-slate-700 dark:bg-slate-950"
+                    style={{ aspectRatio: '9 / 17.5' }}
+                    onPointerDown={beginBackgroundDrag}
+                    onPointerMove={moveBackgroundDrag}
+                    onPointerUp={endBackgroundDrag}
+                    onPointerCancel={endBackgroundDrag}
+                  >
+                    <img
+                      src={backgroundDraft.src}
+                      alt="背景图预览"
+                      className="absolute inset-0 h-full w-full object-cover"
+                      draggable={false}
+                      style={buildBackgroundImageStyle(backgroundDraft)}
+                    />
+                    <div className={`absolute inset-0 ${darkMode ? 'bg-slate-950/30' : 'bg-[#eef6e5]/28'}`} />
+                    <div className="pointer-events-none absolute inset-x-3 top-3 h-14 rounded-[1.4rem] border border-white/75 bg-white/72 backdrop-blur-md dark:border-slate-700/75 dark:bg-slate-900/75" />
+                    <div className="pointer-events-none absolute inset-x-4 bottom-4 rounded-[1.8rem] border border-white/75 bg-white/78 p-4 backdrop-blur-md dark:border-slate-700/75 dark:bg-slate-900/80">
+                      <div className="h-3 rounded-full bg-green-100/85 dark:bg-green-900/30" />
+                      <div className="mt-2 h-3 w-4/5 rounded-full bg-green-100/60 dark:bg-green-900/20" />
+                      <div className="mt-4 h-20 rounded-[1.4rem] bg-white/70 dark:bg-slate-800/70" />
+                    </div>
+                    <div className="pointer-events-none absolute inset-5 rounded-[1.7rem] border border-dashed border-white/80 dark:border-green-200/25" />
+                    <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/45 px-3 py-1.5 text-[11px] font-bold tracking-wide text-white">
+                      拖拽调整取景
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-[2rem] border border-white/70 bg-white/82 p-4 shadow-[0_16px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/82">
+                  <div className="flex items-center justify-between text-sm font-black text-gray-900 dark:text-slate-100">
+                    <span>缩放画面</span>
+                    <span>{backgroundDraft.scale.toFixed(2)}x</span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">放大后可更精准地保留主体区域，适合处理长图或横图。</p>
+                  <input
+                    type="range"
+                    min={MIN_BACKGROUND_SCALE}
+                    max={MAX_BACKGROUND_SCALE}
+                    step="0.01"
+                    value={backgroundDraft.scale}
+                    onChange={(e) =>
+                      setBackgroundDraft((prev) =>
+                        prev
+                          ? normalizeBackgroundConfig({
+                              ...prev,
+                              scale: Number(e.target.value),
+                            })
+                          : prev
+                      )
+                    }
+                    className="mt-4 w-full accent-green-500"
+                  />
+                  <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-gray-400 dark:text-slate-500">
+                    <span>{MIN_BACKGROUND_SCALE.toFixed(1)}x</span>
+                    <span>{MAX_BACKGROUND_SCALE.toFixed(1)}x</span>
+                  </div>
+                </section>
+
+                <section className="rounded-[2rem] border border-white/70 bg-white/82 p-4 shadow-[0_16px_50px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/82">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h5 className="text-sm font-black text-gray-900 dark:text-slate-100">快速定位</h5>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">拖拽不够细时，可以用按钮做小范围校正。</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetBackgroundDraft}
+                      className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700 transition-colors dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      重置
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setBackgroundDraftPosition(DEFAULT_BACKGROUND_POSITION_X, DEFAULT_BACKGROUND_POSITION_Y)}
+                      className="rounded-2xl bg-emerald-50 px-3 py-3 text-emerald-700 transition-colors dark:bg-emerald-900/20 dark:text-emerald-300"
+                    >
+                      默认
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBackgroundDraftPosition(50, 50)}
+                      className="rounded-2xl bg-gray-100 px-3 py-3 text-gray-700 transition-colors dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      居中
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBackgroundDraftPosition(50, 100)}
+                      className="rounded-2xl bg-gray-100 px-3 py-3 text-gray-700 transition-colors dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      底部
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-center">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div />
+                      <button
+                        type="button"
+                        onClick={() => nudgeBackgroundDraft(0, -4)}
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 transition-transform active:scale-[0.97] dark:bg-slate-800 dark:text-slate-300"
+                        aria-label="背景向上微调"
+                      >
+                        <FaIcon name="chevron-up" />
+                      </button>
+                      <div />
+                      <button
+                        type="button"
+                        onClick={() => nudgeBackgroundDraft(-4, 0)}
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 transition-transform active:scale-[0.97] dark:bg-slate-800 dark:text-slate-300"
+                        aria-label="背景向左微调"
+                      >
+                        <FaIcon name="chevron-left" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBackgroundDraftPosition(50, 50)}
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-500 text-white shadow-lg shadow-green-500/20 transition-transform active:scale-[0.97]"
+                        aria-label="背景居中"
+                      >
+                        <FaIcon name="check" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => nudgeBackgroundDraft(4, 0)}
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 transition-transform active:scale-[0.97] dark:bg-slate-800 dark:text-slate-300"
+                        aria-label="背景向右微调"
+                      >
+                        <FaIcon name="chevron-right" />
+                      </button>
+                      <div />
+                      <button
+                        type="button"
+                        onClick={() => nudgeBackgroundDraft(0, 4)}
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 transition-transform active:scale-[0.97] dark:bg-slate-800 dark:text-slate-300"
+                        aria-label="背景向下微调"
+                      >
+                        <FaIcon name="chevron-down" />
+                      </button>
+                      <div />
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <footer className="shrink-0 border-t border-white/60 bg-white/86 px-5 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] pt-4 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-950/86">
+              <div className="mx-auto flex w-full max-w-md gap-3">
+                <button
+                  type="button"
+                  onClick={closeBackgroundEditor}
+                  className="flex-1 rounded-[1.4rem] bg-gray-100 px-4 py-3.5 text-sm font-bold text-gray-700 transition-colors dark:bg-slate-800 dark:text-slate-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={saveBackgroundDraft}
+                  className="flex-1 rounded-[1.4rem] bg-green-500 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-green-500/25 transition-transform active:scale-[0.985]"
+                >
+                  保存背景
+                </button>
+              </div>
+            </footer>
+          </div>
+        </div>,
+        document.body
       )}
 
       {enableSecurityQuestion && showSecurityQuestionPicker && typeof document !== 'undefined' && createPortal(

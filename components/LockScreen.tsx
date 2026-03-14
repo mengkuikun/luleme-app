@@ -9,6 +9,14 @@ import {
 } from '../constants';
 import { hashSecret, isLegacyPlainSecret, verifySecret } from '../utils/secret';
 import { BIOMETRY_LABEL, getBiometricAvailability, verifyBiometricIdentity } from '../utils/biometric';
+import {
+  createPinFailureState,
+  DEFAULT_MAX_PIN_ATTEMPTS,
+  DEFAULT_PIN_LOCK_DURATION_MS,
+  readStoredNumber,
+  sanitizeFailedAttempts,
+  sanitizeLockUntil,
+} from '../utils/pinLock';
 import FaIcon from './FaIcon';
 
 interface Props {
@@ -18,15 +26,8 @@ interface Props {
   onResetPin?: () => void;
 }
 
-const MAX_PIN_ATTEMPTS = 5;
-const PIN_LOCK_DURATION_MS = 30_000;
-
-function readStoredNumber(key: string): number | null {
-  const raw = localStorage.getItem(key);
-  if (!raw) return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
-}
+const MAX_PIN_ATTEMPTS = DEFAULT_MAX_PIN_ATTEMPTS;
+const PIN_LOCK_DURATION_MS = DEFAULT_PIN_LOCK_DURATION_MS;
 
 const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin }) => {
   const [input, setInput] = useState('');
@@ -43,14 +44,10 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
   const [biometricError, setBiometricError] = useState('');
   const [pinStatus, setPinStatus] = useState('');
   const [failedPinAttempts, setFailedPinAttempts] = useState<number>(() => {
-    const attempts = readStoredNumber(PIN_FAILED_ATTEMPTS_KEY);
-    if (attempts == null || attempts < 0) return 0;
-    return Math.min(MAX_PIN_ATTEMPTS, Math.floor(attempts));
+    return sanitizeFailedAttempts(readStoredNumber(localStorage, PIN_FAILED_ATTEMPTS_KEY), MAX_PIN_ATTEMPTS);
   });
   const [pinLockedUntil, setPinLockedUntil] = useState<number | null>(() => {
-    const lockUntil = readStoredNumber(PIN_LOCK_UNTIL_KEY);
-    if (lockUntil == null || lockUntil <= Date.now()) return null;
-    return lockUntil;
+    return sanitizeLockUntil(readStoredNumber(localStorage, PIN_LOCK_UNTIL_KEY), Date.now());
   });
   const [nowTs, setNowTs] = useState(Date.now());
   const autoBiometricTriedRef = useRef(false);
@@ -130,7 +127,7 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
   }, [pinLockedUntil]);
 
   useEffect(() => {
-    if (!pinLockedUntil) return;
+    if (!pinLockedUntil) return undefined;
     const tick = () => {
       const now = Date.now();
       setNowTs(now);
@@ -160,16 +157,16 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
   const handlePinFailed = () => {
     setError(true);
     setFailedPinAttempts((prev) => {
-      const next = prev + 1;
-      if (next >= MAX_PIN_ATTEMPTS) {
-        setPinLockedUntil(Date.now() + PIN_LOCK_DURATION_MS);
+      const nextState = createPinFailureState(prev, Date.now(), MAX_PIN_ATTEMPTS, PIN_LOCK_DURATION_MS);
+      if (nextState.shouldLock) {
+        setPinLockedUntil(nextState.lockUntil);
         setInput('');
-        setPinStatus(`尝试过多，请 ${Math.ceil(PIN_LOCK_DURATION_MS / 1000)} 秒后重试`);
-        return next;
+        setPinStatus(nextState.status);
+        return nextState.failedAttempts;
       }
-      setPinStatus(`PIN 错误，还可尝试 ${MAX_PIN_ATTEMPTS - next} 次`);
+      setPinStatus(nextState.status);
       window.setTimeout(() => setInput(''), 500);
-      return next;
+      return nextState.failedAttempts;
     });
   };
 
@@ -427,18 +424,6 @@ const LockScreen: React.FC<Props> = ({ onUnlock, biometricEnabled, onResetPin })
         </div>
       )}
       
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-10px); }
-          40% { transform: translateX(10px); }
-          60% { transform: translateX(-7px); }
-          80% { transform: translateX(7px); }
-        }
-        .animate-shake {
-          animation: shake 0.4s ease-in-out;
-        }
-      `}</style>
     </div>
   );
 };

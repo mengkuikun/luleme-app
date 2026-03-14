@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { RecordEntry } from '../types';
 import { getLocalDateString } from '../constants';
@@ -10,9 +10,10 @@ interface Props {
   stampAnimationDate: string | null;
   darkMode: boolean;
   onDatePickerOpenChange?: (open: boolean) => void;
+  requestDatePickerCloseToken?: number;
 }
 
-const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDate, darkMode, onDatePickerOpenChange }) => {
+const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDate, darkMode, onDatePickerOpenChange, requestDatePickerCloseToken }) => {
   const [viewDate, setViewDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -46,6 +47,13 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
     setShowMonthPicker(false);
     setDatePickerOpen(true);
   };
+
+  useEffect(() => {
+    if (!requestDatePickerCloseToken) return;
+    setShowYearPicker(false);
+    setShowMonthPicker(false);
+    setDatePickerOpen(false);
+  }, [requestDatePickerCloseToken]);
 
   const days = [];
   // Padding for start of month
@@ -107,6 +115,16 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
           );
         }
 
+  const trailingEmptyDays = (7 - (days.length % 7)) % 7;
+  for (let i = 0; i < trailingEmptyDays; i++) {
+    days.push(
+      <div
+        key={`empty-end-${i}`}
+        className="h-24 border-t border-l border-green-50/50 dark:border-slate-800/50"
+      ></div>
+    );
+  }
+
         return (
           <div className={`bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm m-4 rounded-[2rem] shadow-sm border border-green-100 dark:border-slate-800 overflow-hidden mb-32`}>
       
@@ -145,54 +163,13 @@ const CalendarView: React.FC<Props> = ({ records, onDateClick, stampAnimationDat
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          <style>{`
-            @keyframes slideUpBounce {
-              0% {
-                opacity: 0;
-                transform: translate(-50%, 20px) scale(0.95);
-              }
-              60% {
-                opacity: 1;
-                transform: translate(-50%, -5px) scale(1.02);
-              }
-              100% {
-                opacity: 1;
-                transform: translate(-50%, 0) scale(1);
-              }
-            }
-            
-            @keyframes iconFloat {
-              0%, 100% {
-                transform: translateY(0) rotate(0deg);
-              }
-              50% {
-                transform: translateY(-8px) rotate(5deg);
-              }
-            }
-            
-            @keyframes shimmer {
-              0% {
-                background-position: -200% center;
-              }
-              100% {
-                background-position: 200% center;
-              }
-            }
-          `}</style>
-          
           <div 
-            className="w-full max-w-xs bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl border border-green-100 dark:border-slate-800 absolute left-1/2"
-            style={{
-              animation: 'slideUpBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
-            }}
+            className="calendar-date-picker-sheet w-full max-w-xs bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl border border-green-100 dark:border-slate-800 absolute left-1/2"
             onClick={e => e.stopPropagation()}
           >
             <div className="text-center mb-6">
               <span 
-                className="text-5xl block mb-4 inline-block"
-                style={{
-                  animation: 'iconFloat 2s ease-in-out infinite'
-                }}
+                className="calendar-picker-icon text-5xl block mb-4 inline-block"
               >
                 📅
               </span>

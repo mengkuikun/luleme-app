@@ -17,6 +17,9 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": false,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
     "jsx": "react-jsx",
     "paths": {
       "@/*": [

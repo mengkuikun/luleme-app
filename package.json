@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "android:sync": "npx cap sync android",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck"
+    "test": "vitest run",
+    "test:typecheck": "npm run typecheck"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
+    "@capacitor/app": "^6.0.3",
     "@capacitor/cli": "^6.2.1",
     "@capacitor/core": "^6.2.1",
     "@capacitor/filesystem": "^6.0.4",
@@ -34,6 +37,7 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.1.0"
   }
 }

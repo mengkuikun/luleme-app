@@ -16,8 +16,10 @@ import {
   faDeleteLeft,
   faFileExport,
   faFileImport,
+  faFileLines,
   faFingerprint,
   faFire,
+  faFolderOpen,
   faGear,
   faHome,
   faHourglassHalf,
@@ -53,8 +55,10 @@ export type FaIconName =
   | 'delete-left'
   | 'file-export'
   | 'file-import'
+  | 'file-lines'
   | 'fingerprint'
   | 'fire'
+  | 'folder-open'
   | 'gear'
   | 'home'
   | 'hourglass-half'
@@ -89,8 +93,10 @@ const ICON_MAP: Record<FaIconName, IconDefinition> = {
   'delete-left': faDeleteLeft,
   'file-export': faFileExport,
   'file-import': faFileImport,
+  'file-lines': faFileLines,
   fingerprint: faFingerprint,
   fire: faFire,
+  'folder-open': faFolderOpen,
   gear: faGear,
   home: faHome,
   'hourglass-half': faHourglassHalf,
@@ -122,4 +128,3 @@ const FaIcon: React.FC<Props> = ({ name, className, spin }) => {
 };
 
 export default FaIcon;
-
