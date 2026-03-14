@@ -121,6 +121,7 @@ const SettingsView: React.FC<Props> = ({
   const [backgroundUrlInput, setBackgroundUrlInput] = useState('');
   const [isCheckingBackgroundUrl, setIsCheckingBackgroundUrl] = useState(false);
   const [showBackgroundEditor, setShowBackgroundEditor] = useState(false);
+  const [isBackgroundEditorClosing, setIsBackgroundEditorClosing] = useState(false);
   const [backgroundDraft, setBackgroundDraft] = useState<CustomBackgroundConfig | null>(null);
   const backgroundDragRef = useRef<{
     pointerId: number;
@@ -129,6 +130,7 @@ const SettingsView: React.FC<Props> = ({
     startPositionX: number;
     startPositionY: number;
   } | null>(null);
+  const backgroundEditorCloseTimerRef = useRef<number | null>(null);
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
@@ -262,6 +264,9 @@ const SettingsView: React.FC<Props> = ({
       if (alertCloseTimerRef.current !== null && typeof window !== 'undefined') {
         window.clearTimeout(alertCloseTimerRef.current);
       }
+      if (backgroundEditorCloseTimerRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(backgroundEditorCloseTimerRef.current);
+      }
     };
   }, []);
 
@@ -280,9 +285,7 @@ const SettingsView: React.FC<Props> = ({
 
     registerBackHandler(() => {
       if (showBackgroundEditor) {
-        setShowBackgroundEditor(false);
-        setBackgroundDraft(null);
-        onSwipeLockChange?.(false);
+        closeBackgroundEditor();
         return true;
       }
       if (alertState.open) {
@@ -442,18 +445,37 @@ const SettingsView: React.FC<Props> = ({
   };
 
   const openBackgroundEditor = (src: string) => {
+    if (backgroundEditorCloseTimerRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(backgroundEditorCloseTimerRef.current);
+      backgroundEditorCloseTimerRef.current = null;
+    }
     const nextDraft =
       customBackground && customBackground.src === src
         ? normalizeBackgroundConfig(customBackground)
         : normalizeBackgroundConfig({ src });
     setBackgroundDraft(nextDraft);
+    setIsBackgroundEditorClosing(false);
     setShowBackgroundEditor(true);
     onSwipeLockChange?.(true);
   };
 
   const closeBackgroundEditor = () => {
+    if (isBackgroundEditorClosing) return;
+    setIsBackgroundEditorClosing(true);
+    if (typeof window !== 'undefined') {
+      backgroundEditorCloseTimerRef.current = window.setTimeout(() => {
+        setShowBackgroundEditor(false);
+        setBackgroundDraft(null);
+        setIsBackgroundEditorClosing(false);
+        backgroundDragRef.current = null;
+        backgroundEditorCloseTimerRef.current = null;
+        onSwipeLockChange?.(false);
+      }, 260);
+      return;
+    }
     setShowBackgroundEditor(false);
     setBackgroundDraft(null);
+    setIsBackgroundEditorClosing(false);
     backgroundDragRef.current = null;
     onSwipeLockChange?.(false);
   };
@@ -1095,7 +1117,11 @@ const SettingsView: React.FC<Props> = ({
       )}
 
       {showBackgroundEditor && backgroundDraft && typeof document !== 'undefined' && createPortal(
-        <div className={`${darkMode ? 'dark ' : ''}fixed inset-0 z-[10001] bg-[#eff6e8] dark:bg-slate-950`}>
+        <div
+          className={`${darkMode ? 'dark ' : ''}fixed inset-0 z-[10001] ${
+            isBackgroundEditorClosing ? 'subpage-shell-out' : 'subpage-shell-in'
+          }`}
+        >
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
             <img
               src={backgroundDraft.src}
@@ -1106,7 +1132,7 @@ const SettingsView: React.FC<Props> = ({
             <div className={`absolute inset-0 ${darkMode ? 'bg-slate-950/82' : 'bg-[#eff6e8]/90'}`} />
           </div>
 
-          <div className="relative flex h-full flex-col">
+          <div className={`relative flex h-full flex-col ${isBackgroundEditorClosing ? 'subpage-panel-out' : 'subpage-panel-in'}`}>
             <div style={{ height: 'env(safe-area-inset-top, 0px)' }} />
 
             <header className="shrink-0 border-b border-white/60 bg-white/82 px-5 py-4 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-950/82">
