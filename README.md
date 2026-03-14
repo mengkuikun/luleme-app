@@ -4,7 +4,7 @@
   <p>记录你的小秘密，追踪健康习惯</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-1.6.1-22c55e" alt="version" />
+    <img src="https://img.shields.io/badge/version-1.6.2-22c55e" alt="version" />
     <img src="https://img.shields.io/badge/platform-Android%20%7C%20Web-16a34a" alt="platform" />
     <img src="https://img.shields.io/badge/stack-React%20%2B%20Vite%20%2B%20Capacitor-0ea5e9" alt="stack" />
   </p>
@@ -135,7 +135,7 @@ npx cap open android
 <a id="changelog"></a>
 ## 更新记录
 
-- 当前版本：`1.6.1`
+- 当前版本：`1.6.2`
 - 详细变更：应用内「更新日志」弹窗（`components/ChangeLog.tsx`）
 
 <a id="contributing"></a>

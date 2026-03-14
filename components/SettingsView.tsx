@@ -1108,7 +1108,7 @@ const SettingsView: React.FC<Props> = ({
             <h4 className="font-bold text-green-900 dark:text-green-400 mb-1">关于鹿了么</h4>
             <p className="text-xs text-green-800/60 dark:text-green-400/40 mb-4">
               <a href="https://github.com/mengkuikun" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-green-700 dark:hover:text-green-300 transition-colors">
-                版本 1.6.1
+                版本 1.6.2
               </a>
             </p>
             <p className="text-xs text-green-800/80 dark:text-green-400/60 leading-relaxed italic px-4">"隐私是我们的最高准则。您的数据永远只会留在您的手机上。"</p>
