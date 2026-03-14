@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { RecordEntry } from '../types';
 import { getLocalDateString } from '../constants';
+import FaIcon from './FaIcon';
 
 interface Props {
   records: RecordEntry[];
@@ -140,7 +141,7 @@ const StatsView: React.FC<Props> = ({ records, darkMode }) => {
     <div className="p-4 space-y-6">
       <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-green-100 dark:border-slate-800">
         <h3 className="text-xl font-bold text-green-800 dark:text-green-400 mb-4 flex items-center gap-2">
-          <i className="fa-solid fa-chart-line"></i> 年度趋势 ({new Date().getFullYear()})
+          <FaIcon name="chart-line" /> 年度趋势 ({new Date().getFullYear()})
         </h3>
         {/* 修复：外层包裹 div 设置 overflow hidden 和最小高度，帮助 Recharts 正确计算尺寸 */}
         <div className="h-64 w-full min-w-0 overflow-hidden" style={{ minHeight: '256px' }}>
@@ -196,7 +197,7 @@ const StatsView: React.FC<Props> = ({ records, darkMode }) => {
       <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-green-100 dark:border-slate-800">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h3 className="text-xl font-bold text-green-800 dark:text-green-400 flex items-center gap-2">
-            <i className="fa-solid fa-fire"></i>
+            <FaIcon name="fire" />
             {heatmapMode === 'year' ? `打卡热力图 (${currentYear})` : `${heatmapViewYear}年${heatmapViewMonth + 1}月 热力图`}
           </h3>
           <div className="flex items-center gap-2">
@@ -215,7 +216,7 @@ const StatsView: React.FC<Props> = ({ records, darkMode }) => {
                   className="w-8 h-8 flex items-center justify-center rounded-full bg-green-100 dark:bg-slate-800 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-slate-700 transition-colors"
                   aria-label="上一月"
                 >
-                  <i className="fa-solid fa-chevron-left text-sm" />
+                  <FaIcon name="chevron-left" className="text-sm" />
                 </button>
                 <button
                   type="button"
@@ -230,7 +231,7 @@ const StatsView: React.FC<Props> = ({ records, darkMode }) => {
                   className="w-8 h-8 flex items-center justify-center rounded-full bg-green-100 dark:bg-slate-800 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-slate-700 transition-colors"
                   aria-label="下一月"
                 >
-                  <i className="fa-solid fa-chevron-right text-sm" />
+                  <FaIcon name="chevron-right" className="text-sm" />
                 </button>
               </>
             )}

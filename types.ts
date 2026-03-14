@@ -4,6 +4,25 @@ export interface RecordEntry {
   timestamp: number;
   note?: string;
   mood?: string;
+  durationMinutes?: number;
+  watchedMovie?: boolean;
+  movieCategory?: string;
+}
+
+export interface RecordEntryDraft {
+  date?: string;
+  mood?: string;
+  note?: string;
+  durationMinutes?: number;
+  watchedMovie?: boolean;
+  movieCategory?: string;
+}
+
+export interface CustomBackgroundConfig {
+  src: string;
+  positionX: number;
+  positionY: number;
+  scale: number;
 }
 
 export type ViewType = 'calendar' | 'stats' | 'settings';

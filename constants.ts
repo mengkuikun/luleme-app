@@ -4,6 +4,7 @@
 export const STORAGE_KEY = 'lulemo_records';
 export const PIN_KEY = 'lulemo_pin';
 export const THEME_KEY = 'lulemo_darkmode';
+export const THEME_MODE_KEY = 'lulemo_theme_mode';
 export const ICON_KEY = 'lulemo_custom_icon';
 export const SOUND_KEY = 'lulemo_sound_enabled';
 export const CUSTOM_SOUND_KEY = 'lulemo_custom_sound_data';
@@ -12,6 +13,8 @@ export const LAST_EXPORT_FILE_KEY = 'lastExportFile';
 export const LAST_EXPORT_FILENAME_KEY = 'lastExportFilename';
 export const SECURITY_QUESTION_KEY = 'lulemo_security_question';
 export const SECURITY_ANSWER_KEY = 'lulemo_security_answer';
+export const PIN_FAILED_ATTEMPTS_KEY = 'lulemo_pin_failed_attempts';
+export const PIN_LOCK_UNTIL_KEY = 'lulemo_pin_lock_until';
 export const CUSTOM_BACKGROUND_KEY = 'lulemo_custom_background';
 export const SAGE_MODE_DURATION_KEY = 'lulemo_sage_mode_duration_minutes';
 export const SAGE_MODE_COOLDOWN_END_KEY = 'lulemo_sage_mode_cooldown_end';
