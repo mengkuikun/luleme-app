@@ -233,7 +233,7 @@ const ChangeLog: React.FC<Props> = ({ onClose, darkMode }) => {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-green-950/85 dark:bg-green-900/50 text-green-400 border border-green-800/70 dark:border-green-700/40">
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-emerald-100 text-emerald-700 border border-emerald-200/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:bg-green-900/50 dark:text-green-400 dark:border-green-700/40 dark:shadow-none">
               <FaIcon name="scroll" className="text-sm" />
             </div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">更新日志</h2>
