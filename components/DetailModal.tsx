@@ -142,7 +142,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
     >
       <div className="w-full max-w-md">
         <div
-          className={`w-full rounded-t-[3rem] border-t bg-white shadow-2xl transition-[height,max-height] duration-[1000ms] ease-linear dark:border-slate-800 dark:bg-slate-900 flex flex-col overflow-hidden ${
+          className={`w-full rounded-t-[3rem] border-t bg-white shadow-2xl transition-[height,max-height] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-slate-800 dark:bg-slate-900 flex flex-col overflow-hidden ${
             isClosing ? 'detail-modal-sheet-out' : 'detail-modal-sheet'
           }`}
           style={{
