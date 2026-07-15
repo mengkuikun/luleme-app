@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RecordEntry, RecordEntryDraft } from '../types';
 import FaIcon from './FaIcon';
+import { getDetailPaneSurfaceClass, getDetailSheetSurfaceClass, getDetailViewportBaseClass } from '../utils/detailModalSurface';
 
 interface Props {
   date: string;
@@ -123,10 +124,13 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
     'relative isolate shrink-0 overflow-visible border-t border-white/70 bg-white/82 px-6 pb-6 pt-4 backdrop-blur-2xl dark:border-slate-800/80 dark:bg-slate-900/82';
   const actionBarBlendClass =
     'pointer-events-none absolute inset-x-0 -top-10 h-14 bg-gradient-to-b from-transparent via-white/72 to-white/92 dark:via-slate-900/62 dark:to-slate-900/92';
-  const listViewClass = `absolute inset-0 flex flex-col transition-[transform,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+  const paneSurfaceClass = getDetailPaneSurfaceClass();
+  const sheetSurfaceClass = getDetailSheetSurfaceClass();
+  const viewportBaseClass = getDetailViewportBaseClass();
+  const listViewClass = `absolute inset-0 flex flex-col ${paneSurfaceClass} transition-[transform,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
     isAdding ? '-translate-x-[7%] opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'
   }`;
-  const addViewClass = `absolute inset-0 flex flex-col transition-[transform,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+  const addViewClass = `absolute inset-0 flex flex-col ${paneSurfaceClass} transition-[transform,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
     isAdding ? 'translate-x-0 opacity-100' : 'translate-x-[10%] opacity-0 pointer-events-none'
   }`;
 
@@ -142,7 +146,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
     >
       <div className="w-full max-w-md">
         <div
-          className={`w-full rounded-t-[3rem] border-t bg-white shadow-2xl transition-[height,max-height] duration-[1000ms] ease-linear dark:border-slate-800 dark:bg-slate-900 flex flex-col overflow-hidden ${
+          className={`w-full rounded-t-[3rem] border-t bg-white shadow-2xl transition-[height,max-height] ${sheetSurfaceClass} duration-[1000ms] ease-linear dark:border-slate-800 dark:bg-slate-900 flex flex-col overflow-hidden ${
             isClosing ? 'detail-modal-sheet-out' : 'detail-modal-sheet'
           }`}
           style={{
@@ -199,7 +203,8 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
           </div>
         </div>
 
-        <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-h-0 flex-1 overflow-hidden isolate [contain:paint]">
+          <div aria-hidden="true" className={viewportBaseClass} />
           <div className={listViewClass} aria-hidden={isAdding}>
             <div className="detail-list-scroll flex flex-1 flex-col gap-3 overflow-y-auto px-6 py-5 pr-5">
               {records.length > 0 ? (
