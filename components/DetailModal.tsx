@@ -121,9 +121,9 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
   const addModeHeight = `calc(min(80dvh, 100dvh - env(safe-area-inset-top, 0px) - ${DETAIL_MODAL_TOP_GAP_PX}px))`;
   const listModeHeight = `calc(min(${records.length > 0 ? '68dvh' : '56dvh'}, 100dvh - env(safe-area-inset-top, 0px) - ${DETAIL_MODAL_TOP_GAP_PX}px))`;
   const actionBarClass =
-    'relative isolate shrink-0 overflow-visible border-t border-white/70 bg-white/82 px-6 pb-6 pt-4 backdrop-blur-2xl dark:border-slate-800/80 dark:bg-slate-900/82';
+    'relative isolate shrink-0 overflow-visible border-t border-white/70 bg-white px-6 pb-6 pt-4 dark:border-slate-800/80 dark:bg-slate-900';
   const actionBarBlendClass =
-    'pointer-events-none absolute inset-x-0 -top-10 h-14 bg-gradient-to-b from-transparent via-white/72 to-white/92 dark:via-slate-900/62 dark:to-slate-900/92';
+    'pointer-events-none absolute inset-x-0 -top-10 h-14 bg-gradient-to-b from-transparent via-white to-white dark:via-slate-900 dark:to-slate-900';
   const paneSurfaceClass = getDetailPaneSurfaceClass();
   const sheetSurfaceClass = getDetailSheetSurfaceClass();
   const viewportBaseClass = getDetailViewportBaseClass();
@@ -146,7 +146,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
     >
       <div className="w-full max-w-md">
         <div
-          className={`w-full rounded-t-[3rem] border-t bg-white shadow-2xl transition-[height,max-height] ${sheetSurfaceClass} duration-[1000ms] ease-linear dark:border-slate-800 dark:bg-slate-900 flex flex-col overflow-hidden ${
+          className={`relative w-full rounded-t-[3rem] border-t bg-white transition-[height,max-height] ${sheetSurfaceClass} duration-[1000ms] ease-linear dark:border-slate-800 dark:bg-slate-900 flex flex-col overflow-hidden ${
             isClosing ? 'detail-modal-sheet-out' : 'detail-modal-sheet'
           }`}
           style={{
@@ -155,8 +155,9 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
           }}
           onClick={(e) => e.stopPropagation()}
         >
-        <div className="flex h-full flex-col">
-        <div className="shrink-0 border-b border-gray-100/80 bg-white/96 px-6 pb-4 pt-4 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/96">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white dark:bg-slate-900" />
+        <div className="relative flex h-full flex-col bg-white dark:bg-slate-900">
+        <div className="shrink-0 border-b border-gray-100/80 bg-white px-6 pb-4 pt-4 dark:border-slate-800/80 dark:bg-slate-900">
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-gray-200 dark:bg-slate-700"></div>
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -203,7 +204,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
           </div>
         </div>
 
-        <div className="relative min-h-0 flex-1 overflow-hidden isolate [contain:paint]">
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-slate-900">
           <div aria-hidden="true" className={viewportBaseClass} />
           <div className={listViewClass} aria-hidden={isAdding}>
             <div className="detail-list-scroll flex flex-1 flex-col gap-3 overflow-y-auto px-6 py-5 pr-5">
@@ -217,7 +218,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
                     }}
                     className={`flex cursor-pointer flex-col rounded-2xl border p-4 transition-all ${
                       armedDeleteId === record.id
-                        ? 'border-red-200 bg-red-50/90 shadow-[0_8px_24px_rgba(239,68,68,0.12)] dark:border-red-900/40 dark:bg-red-950/20'
+                        ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950'
                         : 'border-green-100 bg-green-50 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/50'
                     } ${deletingIds.has(record.id) ? 'animate-delete' : ''}`}
                   >
@@ -254,7 +255,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
                         disabled={deletingIds.has(record.id)}
                         className={`flex h-9 w-9 items-center justify-center rounded-full transition-all disabled:opacity-50 ${
                           armedDeleteId === record.id
-                            ? 'pointer-events-auto scale-100 bg-red-500 text-white shadow-lg shadow-red-500/25'
+                            ? 'pointer-events-auto scale-100 bg-red-500 text-white'
                             : 'pointer-events-none scale-75 bg-red-50 text-red-300 opacity-0'
                         }`}
                       >
@@ -287,7 +288,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
               <div className={actionBarBlendClass} />
               <button
                 onClick={() => setIsAdding(true)}
-                className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-yellow-400 py-4 font-bold text-yellow-900 shadow-md transition-all hover:bg-yellow-500 dark:bg-yellow-600 dark:text-yellow-50 dark:hover:bg-yellow-700"
+                className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-yellow-400 py-4 font-bold text-yellow-900 transition-colors hover:bg-yellow-500 dark:bg-yellow-600 dark:text-yellow-50 dark:hover:bg-yellow-700"
               >
                 <FaIcon name="plus" className="transition-transform group-hover:rotate-90" />
                 补录其它心情
@@ -433,7 +434,7 @@ const DetailModal: React.FC<Props> = ({ date, records, onClose, onDelete, onAdd,
               <div className={actionBarBlendClass} />
               <button
                 onClick={handleSave}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-green-500 py-4 font-bold text-white shadow-lg shadow-green-500/20 transition-all hover:bg-green-600"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-green-500 py-4 font-bold text-white transition-colors hover:bg-green-600"
               >
                 <FaIcon name="check" />
                 完成记录

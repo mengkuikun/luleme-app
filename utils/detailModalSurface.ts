@@ -1,9 +1,9 @@
 export function getDetailPaneSurfaceClass(): string {
-  return 'isolate bg-white dark:bg-slate-900 [contain:paint] [backface-visibility:hidden] [transform:translateZ(0)] [will-change:transform,opacity]';
+  return 'isolate bg-white dark:bg-slate-900 [background-clip:padding-box]';
 }
 
 export function getDetailSheetSurfaceClass(): string {
-  return 'isolate [contain:paint] [backface-visibility:hidden] [transform:translateZ(0)] [will-change:height,max-height]';
+  return 'isolate bg-white dark:bg-slate-900 [background-clip:padding-box]';
 }
 
 export function getDetailViewportBaseClass(): string {
