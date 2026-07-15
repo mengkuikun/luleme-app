@@ -40,6 +40,7 @@ import { APP_STORAGE_KEYS, LEGACY_STORAGE_KEY_PAIRS, PIN_SECURITY_STORAGE_KEYS, 
 import { clearScheduledTimeout, scheduleReplacingTimeout } from './utils/timers';
 import { parseStoredThemeMode, resolveDarkMode, ThemeMode } from './utils/theme';
 import { buildBackgroundImageStyle, parseStoredBackgroundConfig, serializeBackgroundConfig } from './utils/background';
+import { clearNativeTextSelection, getSwipeLockGraceUntil, shouldBlockSwipeInteraction, SWIPE_LOCK_GRACE_MS } from './utils/swipe';
 
 type StatsViewModule = typeof import('./components/StatsView');
 let statsViewLoadPromise: Promise<StatsViewModule> | null = null;
@@ -239,17 +240,13 @@ const App: React.FC = () => {
   const swipeStartY = useRef<number | null>(null);
   const isHorizontalSwipe = useRef<boolean>(false);
   const swipeSuspendedRef = useRef(false);
+  const swipeLockedUntilRef = useRef(0);
   const settingsBackHandlerRef = useRef<(() => boolean) | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const slidesRef = useRef<HTMLDivElement | null>(null);
   const viewWidthRef = useRef<number>(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragDX, setDragDX] = useState(0);
-
-  const isEditableElement = useCallback(
-    (el: Element | null) => !!el?.closest('input, textarea, select, [contenteditable], [data-disable-swipe="true"]'),
-    []
-  );
 
   const cancelSwipeTracking = useCallback(() => {
     swipeStartX.current = null;
@@ -260,8 +257,11 @@ const App: React.FC = () => {
   }, []);
 
   const setSwipeSuspended = useCallback(
-    (locked: boolean) => {
+    (locked: boolean, options?: { graceMs?: number }) => {
       swipeSuspendedRef.current = locked;
+      if (!locked && options?.graceMs) {
+        swipeLockedUntilRef.current = getSwipeLockGraceUntil(Date.now(), options.graceMs);
+      }
       if (locked) {
         cancelSwipeTracking();
       }
@@ -688,26 +688,35 @@ const App: React.FC = () => {
   }, [clearTimers, addRecord]);
 
   // Helpers for swipe navigation
-  const setViewByIndex = (i: number) => {
-    if (i === 1) {
+  const navigateToView = (view: ViewType) => {
+    clearNativeTextSelection();
+    cancelSwipeTracking();
+    swipeSuspendedRef.current = false;
+    swipeLockedUntilRef.current = 0;
+
+    if (view === 'stats') {
       void loadStatsView();
     }
-    if (i === 2) {
+    if (view === 'settings') {
       void loadSettingsView();
     }
-    setCurrentView(i === 0 ? 'calendar' : i === 1 ? 'stats' : 'settings');
+    setCurrentView(view);
   };
 
-  const isEditableTouchTarget = (target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false;
-    return isEditableElement(target);
+  const setViewByIndex = (i: number) => {
+    navigateToView(i === 0 ? 'calendar' : i === 1 ? 'stats' : 'settings');
   };
+
+  const isSwipeBlocked = (target: EventTarget | null) =>
+    shouldBlockSwipeInteraction(target, swipeSuspendedRef.current, swipeLockedUntilRef.current, Date.now());
 
   const handleSwipeStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     if (!t) return;
-    if (swipeSuspendedRef.current) return;
-    if (isEditableTouchTarget(e.target)) return;
+    if (isSwipeBlocked(e.target)) {
+      cancelSwipeTracking();
+      return;
+    }
     swipeStartX.current = t.clientX;
     swipeStartY.current = t.clientY;
     isHorizontalSwipe.current = false;
@@ -717,12 +726,11 @@ const App: React.FC = () => {
   };
 
   const handleSwipeMove = (e: React.TouchEvent) => {
-    if (swipeSuspendedRef.current) {
+    if (isSwipeBlocked(e.target)) {
       cancelSwipeTracking();
       return;
     }
     if (swipeStartX.current == null || swipeStartY.current == null) return;
-    if (isEditableTouchTarget(e.target)) return;
     const t = e.touches[0];
     if (!t) return;
     const dx = t.clientX - swipeStartX.current;
@@ -743,7 +751,7 @@ const App: React.FC = () => {
   };
 
   const handleSwipeEnd = (e: React.TouchEvent) => {
-    if (swipeSuspendedRef.current) {
+    if (isSwipeBlocked(e.target)) {
       cancelSwipeTracking();
       return;
     }
@@ -1054,7 +1062,12 @@ const App: React.FC = () => {
             onTouchMove={handleSwipeMove}
             onTouchEnd={handleSwipeEnd}
             onTouchCancel={handleSwipeCancel}
-            onContextMenu={handleSwipeCancel}
+            onContextMenu={(e) => {
+              if (isSwipeBlocked(e.target)) {
+                swipeLockedUntilRef.current = getSwipeLockGraceUntil(Date.now(), SWIPE_LOCK_GRACE_MS);
+              }
+              handleSwipeCancel();
+            }}
           >
           <div 
               ref={slidesRef}
@@ -1213,14 +1226,13 @@ const App: React.FC = () => {
         </div>
 
         <nav className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-green-100 dark:border-slate-800 flex justify-around py-4 shrink-0 z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
-          <button onClick={() => setCurrentView('calendar')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'calendar' ? 'text-green-600' : 'text-gray-400'}`}>
+          <button onClick={() => navigateToView('calendar')} className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'calendar' ? 'text-green-600' : 'text-gray-400'}`}>
             <FaIcon name="calendar-days" className={`text-xl transition-transform ${currentView === 'calendar' ? 'scale-110' : ''}`} />
             <span className="text-[10px] font-bold">日历</span>
           </button>
           <button
             onClick={() => {
-              void loadStatsView();
-              setCurrentView('stats');
+              navigateToView('stats');
             }}
             className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'stats' ? 'text-green-600' : 'text-gray-400'}`}
           >
@@ -1229,8 +1241,7 @@ const App: React.FC = () => {
           </button>
           <button
             onClick={() => {
-              void loadSettingsView();
-              setCurrentView('settings');
+              navigateToView('settings');
             }}
             className={`flex flex-col items-center gap-1 transition-colors duration-300 ${currentView === 'settings' ? 'text-green-600' : 'text-gray-400'}`}
           >

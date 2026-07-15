@@ -15,6 +15,7 @@ import {
   MIN_BACKGROUND_SCALE,
   normalizeBackgroundConfig,
 } from '../utils/background';
+import { SWIPE_LOCK_GRACE_MS } from '../utils/swipe';
 import FaIcon from './FaIcon';
 
 type CollapsibleSectionKey = 'security' | 'habit' | 'appearance' | 'data';
@@ -26,7 +27,7 @@ interface Props {
   darkMode: boolean;
   themeMode: ThemeMode;
   onThemeModeChange: (mode: ThemeMode) => void;
-  onSwipeLockChange?: (locked: boolean) => void;
+  onSwipeLockChange?: (locked: boolean, options?: { graceMs?: number }) => void;
   registerBackHandler?: (handler: (() => boolean) | null) => void;
   soundEnabled: boolean;
   toggleSound: () => void;
@@ -960,21 +961,21 @@ const SettingsView: React.FC<Props> = ({
                     data-disable-swipe="true"
                     value={backgroundUrlInput}
                     onChange={(e) => setBackgroundUrlInput(e.target.value)}
-                    onFocus={() => onSwipeLockChange?.(true)}
-                    onBlur={() => onSwipeLockChange?.(false)}
+                    onBlur={() => onSwipeLockChange?.(false, { graceMs: SWIPE_LOCK_GRACE_MS })}
                     onTouchStartCapture={(e) => {
-                      onSwipeLockChange?.(true);
                       stopSwipePropagation(e);
                     }}
                     onTouchMoveCapture={stopSwipePropagation}
-                    onTouchEndCapture={stopSwipePropagation}
+                    onTouchEndCapture={(e) => {
+                      stopSwipePropagation(e);
+                      onSwipeLockChange?.(false, { graceMs: SWIPE_LOCK_GRACE_MS });
+                    }}
                     onPointerDownCapture={(e) => {
-                      onSwipeLockChange?.(true);
                       stopSwipePropagation(e);
                     }}
                     onContextMenuCapture={(e) => {
-                      onSwipeLockChange?.(true);
                       stopSwipePropagation(e);
+                      onSwipeLockChange?.(false, { graceMs: SWIPE_LOCK_GRACE_MS });
                     }}
                   />
                   <button
