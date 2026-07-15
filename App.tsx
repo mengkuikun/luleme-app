@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { ViewType, RecordEntry, RecordEntryDraft, CustomBackgroundConfig } from './types';
+import { ViewType, RecordEntry, RecordEntryDraft, CustomBackgroundConfig, WebDavBackupFile, WebDavConfig } from './types';
 import {
   STORAGE_KEY,
   PIN_KEY,
@@ -18,6 +18,7 @@ import {
   PIN_FAILED_ATTEMPTS_KEY,
   PIN_LOCK_UNTIL_KEY,
   CUSTOM_BACKGROUND_KEY,
+  WEBDAV_CONFIG_KEY,
   SAGE_MODE_DURATION_KEY,
   SAGE_MODE_COOLDOWN_END_KEY,
   SAGE_MODE_ENABLED_KEY,
@@ -34,13 +35,23 @@ import FaIcon from './components/FaIcon';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { mergeImportedRecords, serializeRecordsToCsv } from './utils/csv';
+import { mergeImportedRecords, parseRecordEntriesFromCsv, serializeRecordsToCsv } from './utils/csv';
 import { migrateStorageKeys } from './utils/storageMigration';
 import { APP_STORAGE_KEYS, LEGACY_STORAGE_KEY_PAIRS, PIN_SECURITY_STORAGE_KEYS, removeStorageKeys } from './utils/appStorage';
 import { clearScheduledTimeout, scheduleReplacingTimeout } from './utils/timers';
 import { parseStoredThemeMode, resolveDarkMode, ThemeMode } from './utils/theme';
 import { buildBackgroundImageStyle, parseStoredBackgroundConfig, serializeBackgroundConfig } from './utils/background';
 import { clearNativeTextSelection, getSwipeLockGraceUntil, shouldBlockSwipeInteraction, SWIPE_LOCK_GRACE_MS } from './utils/swipe';
+import {
+  downloadWebDavBackup,
+  getLatestWebDavBackup,
+  listWebDavBackups,
+  normalizeWebDavConfig,
+  parseStoredWebDavConfig,
+  serializeWebDavConfig,
+  testWebDavConnection,
+  uploadWebDavBackup,
+} from './utils/webdav';
 
 type StatsViewModule = typeof import('./components/StatsView');
 let statsViewLoadPromise: Promise<StatsViewModule> | null = null;
@@ -194,6 +205,11 @@ const App: React.FC = () => {
   const [customIcon, setCustomIcon] = useState<string | null>(null);
   const [customSound, setCustomSound] = useState<string | null>(null);
   const [customBackground, setCustomBackground] = useState<CustomBackgroundConfig | null>(null);
+  const [webDavConfig, setWebDavConfig] = useState<WebDavConfig | null>(null);
+  const [webDavBackups, setWebDavBackups] = useState<WebDavBackupFile[]>([]);
+  const [webDavBusy, setWebDavBusy] = useState(false);
+  const [pendingWebDavImport, setPendingWebDavImport] = useState<WebDavBackupFile | null>(null);
+  const [showWebDavBackupPicker, setShowWebDavBackupPicker] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -336,6 +352,9 @@ const App: React.FC = () => {
       const savedBg = parseStoredBackgroundConfig(localStorage.getItem(CUSTOM_BACKGROUND_KEY));
       if (savedBg) setCustomBackground(savedBg);
 
+      const savedWebDavConfig = parseStoredWebDavConfig(localStorage.getItem(WEBDAV_CONFIG_KEY));
+      if (savedWebDavConfig) setWebDavConfig(savedWebDavConfig);
+
       const savedSound = localStorage.getItem(SOUND_KEY);
       if (savedSound !== null) {
         setSoundEnabled(savedSound === 'true');
@@ -448,6 +467,8 @@ const App: React.FC = () => {
         else localStorage.removeItem(CUSTOM_SOUND_KEY);
         if (customBackground) localStorage.setItem(CUSTOM_BACKGROUND_KEY, serializeBackgroundConfig(customBackground) as string);
         else localStorage.removeItem(CUSTOM_BACKGROUND_KEY);
+        if (webDavConfig) localStorage.setItem(WEBDAV_CONFIG_KEY, serializeWebDavConfig(webDavConfig) as string);
+        else localStorage.removeItem(WEBDAV_CONFIG_KEY);
       } catch (e: unknown) {
         console.error('localStorage write failed:', e);
         if (e instanceof DOMException && e.name === 'QuotaExceededError') {
@@ -455,7 +476,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [records, darkMode, themeMode, customIcon, customSound, customBackground, soundEnabled, sageModeEnabled, sageModeDurationMinutes, biometricUnlockEnabled, isInitialized, isClearing, showToast]);
+  }, [records, darkMode, themeMode, customIcon, customSound, customBackground, webDavConfig, soundEnabled, sageModeEnabled, sageModeDurationMinutes, biometricUnlockEnabled, isInitialized, isClearing, showToast]);
 
   useEffect(() => {
     try {
@@ -862,6 +883,9 @@ const App: React.FC = () => {
     setCustomIcon(null);
     setCustomSound(null);
     setCustomBackground(null);
+    setWebDavConfig(null);
+    setWebDavBackups([]);
+    setPendingWebDavImport(null);
     setThemeMode('system');
     setSoundEnabled(true);
     setSageModeEnabled(true);
@@ -949,6 +973,124 @@ const App: React.FC = () => {
       showToast('导出失败，请重试');
     }
   };
+
+  const requireWebDavConfig = useCallback(() => {
+    if (!webDavConfig?.url) {
+      showToast('请先配置 WebDAV');
+      return null;
+    }
+    return normalizeWebDavConfig(webDavConfig);
+  }, [showToast, webDavConfig]);
+
+  const saveWebDavConfig = useCallback((config: WebDavConfig | null) => {
+    const normalized = config ? normalizeWebDavConfig(config) : null;
+    setWebDavConfig(normalized?.url ? normalized : null);
+    if (!normalized?.url) {
+      setWebDavBackups([]);
+      showToast('已清除 WebDAV 配置');
+      return;
+    }
+    showToast('WebDAV 配置已保存');
+  }, [showToast]);
+
+  const runWebDavAction = useCallback(async (action: () => Promise<void>) => {
+    if (webDavBusy) return;
+    setWebDavBusy(true);
+    try {
+      await action();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'WebDAV 操作失败';
+      showToast(msg);
+    } finally {
+      setWebDavBusy(false);
+    }
+  }, [showToast, webDavBusy]);
+
+  const handleWebDavTest = useCallback(async () => {
+    const config = requireWebDavConfig();
+    if (!config) return;
+    await runWebDavAction(async () => {
+      await testWebDavConnection(config);
+      showToast('WebDAV 连接正常');
+    });
+  }, [requireWebDavConfig, runWebDavAction, showToast]);
+
+  const handleWebDavUpload = useCallback(async () => {
+    const config = requireWebDavConfig();
+    if (!config) return;
+    if (records.length === 0) {
+      showToast('没有记录可供备份');
+      return;
+    }
+    await runWebDavAction(async () => {
+      const csvContent = serializeRecordsToCsv(records);
+      const result = await uploadWebDavBackup(config, csvContent);
+      setWebDavBackups((prev) => {
+        const next = new Map<string, WebDavBackupFile>(prev.map((backup) => [backup.name, backup]));
+        next.set(result.latest.name, result.latest);
+        next.set(result.timestamped.name, result.timestamped);
+        return Array.from(next.values()).sort((a, b) => {
+          if (a.isLatest !== b.isLatest) return a.isLatest ? -1 : 1;
+          return b.name.localeCompare(a.name);
+        });
+      });
+      showToast(`WebDAV 备份成功\n${result.timestamped.name}`);
+    });
+  }, [records, requireWebDavConfig, runWebDavAction, showToast]);
+
+  const handleWebDavRefresh = useCallback(async () => {
+    const config = requireWebDavConfig();
+    if (!config) return;
+    await runWebDavAction(async () => {
+      const backups = await listWebDavBackups(config);
+      setWebDavBackups(backups);
+      showToast(backups.length > 0 ? `找到 ${backups.length} 个云端备份` : '云端暂无备份文件');
+    });
+  }, [requireWebDavConfig, runWebDavAction, showToast]);
+
+  const handleWebDavImportLatestRequest = useCallback(() => {
+    const config = requireWebDavConfig();
+    if (!config) return;
+    setPendingWebDavImport(getLatestWebDavBackup(config));
+  }, [requireWebDavConfig]);
+
+  const handleWebDavOpenBackupPicker = useCallback(() => {
+    const config = requireWebDavConfig();
+    if (!config) return;
+    setShowWebDavBackupPicker(true);
+    void handleWebDavRefresh();
+  }, [handleWebDavRefresh, requireWebDavConfig]);
+
+  const handleWebDavImportRequest = useCallback((backup: WebDavBackupFile) => {
+    setShowWebDavBackupPicker(false);
+    setPendingWebDavImport(backup);
+  }, []);
+
+  const executeWebDavImport = useCallback(async (backup: WebDavBackupFile) => {
+    const config = requireWebDavConfig();
+    if (!config) return;
+    await runWebDavAction(async () => {
+      let csvText: string;
+      try {
+        csvText = await downloadWebDavBackup(config, backup);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('云端备份不存在')) {
+          setWebDavBackups((prev) => prev.filter((item) => item.name !== backup.name));
+          setPendingWebDavImport(null);
+        }
+        throw error;
+      }
+      const importedRecords = parseRecordEntriesFromCsv(csvText);
+      const { merged, importedCount, skippedCount } = mergeImportedRecords(records, importedRecords);
+      setRecords(merged);
+      setPendingWebDavImport(null);
+      showToast(
+        skippedCount > 0
+          ? `WebDAV 导入 ${importedCount} 条\n跳过重复 ${skippedCount} 条`
+          : `WebDAV 导入 ${importedCount} 条`
+      );
+    });
+  }, [records, requireWebDavConfig, runWebDavAction, showToast]);
 
   const shareLastExport = async () => {
     const fileUri = localStorage.getItem(LAST_EXPORT_FILE_KEY);
@@ -1133,6 +1275,13 @@ const App: React.FC = () => {
                     else setShowExportConfirm(true);
                   }}
                   onShareExport={() => shareLastExport()}
+                  webDavConfig={webDavConfig}
+                  webDavBackups={webDavBackups}
+                  webDavBusy={webDavBusy}
+                  onWebDavConfigSave={saveWebDavConfig}
+                  onWebDavTest={handleWebDavTest}
+                  onWebDavUpload={handleWebDavUpload}
+                  onWebDavOpenBackupList={handleWebDavOpenBackupPicker}
                   onShowChangeLog={() => setShowChangeLog(true)}
                   onRemovePinRequest={() => setShowRemovePinConfirm(true)}
                   currentPin={currentPin}
@@ -1353,6 +1502,121 @@ const App: React.FC = () => {
                   >
                     我知道了
                   </button>
+                </div>
+              </div>
+            )}
+          </DataDialog>
+        )}
+
+        {showWebDavBackupPicker && (
+          <DataDialog onClose={() => setShowWebDavBackupPicker(false)}>
+            {({ isClosing, requestClose }) => (
+              <div className={`${isClosing ? 'data-dialog-sheet-out' : 'data-dialog-sheet'} w-full max-w-sm bg-white dark:bg-slate-900 rounded-[2.5rem] p-6 shadow-2xl border border-cyan-100 dark:border-cyan-900/30`} onClick={e => e.stopPropagation()}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">云端备份</h3>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">选择一个 WebDAV 备份导入</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {webDavBusy && <FaIcon name="spinner" spin className="text-cyan-600 dark:text-cyan-300" />}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        void handleWebDavRefresh();
+                      }}
+                      disabled={webDavBusy}
+                      className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700 active:scale-[0.96] disabled:opacity-50 dark:bg-cyan-950/30 dark:text-cyan-200"
+                      aria-label="刷新云端备份列表"
+                    >
+                      <FaIcon name="rotate" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-5 max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+                  <button
+                    type="button"
+                    onClick={() => requestClose(() => handleWebDavImportLatestRequest())}
+                    disabled={webDavBusy}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/80 px-4 py-3 text-left active:scale-[0.99] disabled:opacity-50 dark:border-cyan-900/40 dark:bg-cyan-950/25"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-cyan-900 dark:text-cyan-100">latest - 最新备份</div>
+                      <div className="mt-0.5 text-[11px] text-cyan-700/70 dark:text-cyan-300/70">直接尝试下载 latest 文件</div>
+                    </div>
+                    <FaIcon name="cloud-arrow-down" className="shrink-0 text-cyan-600 dark:text-cyan-300" />
+                  </button>
+
+                  {webDavBackups.length > 0 ? (
+                    webDavBackups
+                      .filter((backup) => !backup.isLatest)
+                      .map((backup) => (
+                        <button
+                          key={backup.name}
+                          type="button"
+                          onClick={() => requestClose(() => handleWebDavImportRequest(backup))}
+                          disabled={webDavBusy}
+                          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-left active:scale-[0.99] disabled:opacity-50 dark:border-slate-800 dark:bg-slate-800/70"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-bold text-gray-900 dark:text-slate-100">{backup.name}</div>
+                            <div className="mt-0.5 text-[10px] text-gray-500 dark:text-slate-400">
+                              {backup.lastModified || (backup.size != null ? `${backup.size} bytes` : '点击导入该云端备份')}
+                            </div>
+                          </div>
+                          <FaIcon name="cloud-arrow-down" className="shrink-0 text-cyan-600 dark:text-cyan-300" />
+                        </button>
+                      ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/45 px-4 py-5 text-center text-xs font-medium text-cyan-700 dark:border-cyan-900/50 dark:bg-cyan-950/15 dark:text-cyan-300">
+                      暂无云端备份，点右上角刷新或先上传一次
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => requestClose()}
+                  className="mt-5 w-full rounded-2xl bg-gray-100 py-3.5 text-sm font-bold text-gray-600 active:scale-[0.98] dark:bg-slate-800 dark:text-slate-300"
+                >
+                  取消
+                </button>
+              </div>
+            )}
+          </DataDialog>
+        )}
+
+        {pendingWebDavImport && (
+          <DataDialog onClose={() => setPendingWebDavImport(null)}>
+            {({ isClosing, requestClose }) => (
+              <div className={`${isClosing ? 'data-dialog-sheet-out' : 'data-dialog-sheet'} w-full max-w-xs bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl border border-cyan-100 dark:border-cyan-900/30`} onClick={e => e.stopPropagation()}>
+                <div className="text-center">
+                  <span className="text-5xl block mb-4">☁️📥</span>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">从 WebDAV 导入？</h3>
+                  <p className="text-sm text-gray-500 dark:text-slate-400 mb-6 leading-relaxed">
+                    将下载云端备份并合并到本地记录，重复 ID 会自动跳过。
+                  </p>
+                  <div className="mb-6 rounded-2xl bg-cyan-50 px-3 py-3 text-xs font-bold text-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-200">
+                    {pendingWebDavImport.name}
+                  </div>
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => requestClose(() => {
+                        void executeWebDavImport(pendingWebDavImport);
+                      })}
+                      disabled={webDavBusy}
+                      className="w-full py-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-2xl shadow-lg shadow-cyan-500/20 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      确认导入
+                    </button>
+                    <button
+                      onClick={() => requestClose()}
+                      className="w-full py-4 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 font-bold rounded-2xl transition-all active:scale-95"
+                    >
+                      取消
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

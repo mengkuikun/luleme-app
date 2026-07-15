@@ -25,6 +25,21 @@ export interface CustomBackgroundConfig {
   scale: number;
 }
 
+export interface WebDavConfig {
+  url: string;
+  username: string;
+  password: string;
+  directory: string;
+}
+
+export interface WebDavBackupFile {
+  name: string;
+  url: string;
+  isLatest: boolean;
+  size?: number;
+  lastModified?: string;
+}
+
 export type ViewType = 'calendar' | 'stats' | 'settings';
 
 export interface DayData {

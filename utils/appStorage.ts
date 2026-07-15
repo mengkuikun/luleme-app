@@ -18,6 +18,7 @@ import {
   STORAGE_KEY,
   THEME_KEY,
   THEME_MODE_KEY,
+  WEBDAV_CONFIG_KEY,
 } from '../constants';
 
 import { StorageLike, StorageKeyPair } from './storageMigration';
@@ -38,6 +39,7 @@ export const APP_STORAGE_KEYS = [
   PIN_FAILED_ATTEMPTS_KEY,
   PIN_LOCK_UNTIL_KEY,
   CUSTOM_BACKGROUND_KEY,
+  WEBDAV_CONFIG_KEY,
   SAGE_MODE_DURATION_KEY,
   SAGE_MODE_COOLDOWN_END_KEY,
   SAGE_MODE_ENABLED_KEY,

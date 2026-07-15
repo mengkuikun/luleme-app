@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CustomBackgroundConfig, RecordEntry } from '../types';
+import { CustomBackgroundConfig, RecordEntry, WebDavBackupFile, WebDavConfig } from '../types';
 import { PIN_KEY, SECURITY_QUESTION_KEY, SECURITY_ANSWER_KEY, SECURITY_QUESTIONS } from '../constants';
 import { hashSecret } from '../utils/secret';
 import { BIOMETRY_LABEL, getBiometricAvailability } from '../utils/biometric';
@@ -40,6 +40,13 @@ interface Props {
   onImportRecords?: (newRecords: RecordEntry[]) => void;
   onExportRequest?: () => void;
   onShareExport?: () => void;
+  webDavConfig?: WebDavConfig | null;
+  webDavBackups?: WebDavBackupFile[];
+  webDavBusy?: boolean;
+  onWebDavConfigSave?: (config: WebDavConfig | null) => void;
+  onWebDavTest?: () => void;
+  onWebDavUpload?: () => void;
+  onWebDavOpenBackupList?: () => void;
   onTestSound?: () => void;
   onShowChangeLog?: () => void;
   onRemovePinRequest?: () => void;
@@ -74,6 +81,13 @@ const SettingsView: React.FC<Props> = ({
   onImportRecords,
   onExportRequest,
   onShareExport,
+  webDavConfig,
+  webDavBackups = [],
+  webDavBusy,
+  onWebDavConfigSave,
+  onWebDavTest,
+  onWebDavUpload,
+  onWebDavOpenBackupList,
   onTestSound,
   onShowChangeLog,
   onRemovePinRequest,
@@ -107,6 +121,12 @@ const SettingsView: React.FC<Props> = ({
     title: '',
     message: '',
   });
+  const [webDavUrlInput, setWebDavUrlInput] = useState('');
+  const [webDavUsernameInput, setWebDavUsernameInput] = useState('');
+  const [webDavPasswordInput, setWebDavPasswordInput] = useState('');
+  const [webDavDirectoryInput, setWebDavDirectoryInput] = useState('');
+  const [isWebDavSettingsOpen, setIsWebDavSettingsOpen] = useState(false);
+  const [isWebDavActionsOpen, setIsWebDavActionsOpen] = useState(false);
 
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
   const [isCheckingBiometric, setIsCheckingBiometric] = useState(false);
@@ -135,13 +155,15 @@ const SettingsView: React.FC<Props> = ({
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
+  const webDavConfigured = Boolean(webDavConfig?.url);
+  const showWebDavSettingsForm = !webDavConfigured || isWebDavSettingsOpen;
 
   const sectionKeywords: Record<CollapsibleSectionKey, string[]> = useMemo(
     () => ({
       security: ['安全', '隐私', 'pin', '生物', '解锁', '安全问题', '重置'],
       habit: ['贤者', '倒计时', '打卡', '音效', '声音', '反馈'],
       appearance: ['外观', '主题', '背景', '图标', '深色', '暗黑'],
-      data: ['数据', '导入', '导出', '清除', 'csv', '分享'],
+      data: ['数据', '导入', '导出', '清除', 'csv', '分享', 'webdav', '云备份', '备份', '同步', 'latest', '远程目录', '云端'],
     }),
     []
   );
@@ -274,6 +296,13 @@ const SettingsView: React.FC<Props> = ({
   useEffect(() => {
     void refreshBiometricAvailability();
   }, []);
+
+  useEffect(() => {
+    setWebDavUrlInput(webDavConfig?.url ?? '');
+    setWebDavUsernameInput(webDavConfig?.username ?? '');
+    setWebDavPasswordInput('');
+    setWebDavDirectoryInput(webDavConfig?.directory ?? '');
+  }, [webDavConfig]);
 
   useEffect(() => {
     if (!currentPin && biometricUnlockEnabled) {
@@ -443,6 +472,29 @@ const SettingsView: React.FC<Props> = ({
   const hasImageExtension = (pathname: string) => /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(pathname);
   const stopSwipePropagation = (e: React.SyntheticEvent) => {
     e.stopPropagation();
+  };
+
+  const saveWebDavSettings = () => {
+    const nextUrl = webDavUrlInput.trim();
+    if (!nextUrl) {
+      onWebDavConfigSave?.(null);
+      setIsWebDavActionsOpen(false);
+      return;
+    }
+    onWebDavConfigSave?.({
+      url: nextUrl,
+      username: webDavUsernameInput.trim(),
+      password: webDavPasswordInput || webDavConfig?.password || '',
+      directory: webDavDirectoryInput.trim(),
+    });
+    setWebDavPasswordInput('');
+    setIsWebDavSettingsOpen(false);
+    setIsWebDavActionsOpen(false);
+  };
+
+  const runWebDavButtonAction = (event: React.MouseEvent<HTMLButtonElement>, action?: () => void) => {
+    event.currentTarget.blur();
+    action?.();
   };
 
   const openBackgroundEditor = (src: string) => {
@@ -1039,7 +1091,7 @@ const SettingsView: React.FC<Props> = ({
             <h3 className="text-xs font-bold text-green-600 dark:text-green-500 uppercase tracking-wider">数据管理</h3>
             <FaIcon name="chevron-down" className={`text-green-500 transition-transform duration-300 ${isSectionOpen('data') ? 'rotate-180' : ''}`} />
           </button>
-          <div className={getSectionBodyClass(isSectionOpen('data'))} style={getSectionBodyStyle(isSectionOpen('data'), 520)}>
+          <div className={getSectionBodyClass(isSectionOpen('data'))} style={getSectionBodyStyle(isSectionOpen('data'), 1320)}>
             <div className="px-5 pb-5">
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <button onClick={() => onExportRequest?.()} className="flex flex-col items-center justify-center p-4 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800 rounded-2xl hover:bg-green-100 dark:hover:bg-green-900/30 transition-all group">
@@ -1058,6 +1110,129 @@ const SettingsView: React.FC<Props> = ({
                 </button>
               </div>
               <input type="file" ref={importInputRef} onChange={handleImportData} className="hidden" accept=".csv" />
+              <div className="mb-4 space-y-4 rounded-3xl border border-cyan-100 bg-cyan-50/70 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-cyan-600 shadow-sm dark:bg-slate-900 dark:text-cyan-300">
+                      <FaIcon name="server" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-cyan-900 dark:text-cyan-100">WebDAV 云备份</div>
+                      <div className="text-[11px] text-cyan-700/80 dark:text-cyan-300/80">上传时间戳备份，并同步 latest 文件</div>
+                    </div>
+                  </div>
+                  {webDavBusy && <FaIcon name="spinner" spin className="text-cyan-600 dark:text-cyan-300" />}
+                </div>
+
+                {webDavConfigured && !showWebDavSettingsForm && (
+                  <div className="rounded-2xl border border-cyan-100 bg-white/70 px-3 py-2.5 text-xs text-cyan-800 dark:border-cyan-900/40 dark:bg-slate-900/70 dark:text-cyan-200">
+                    <div className="truncate font-bold">{webDavConfig?.url}</div>
+                    <div className="mt-0.5 text-[11px] text-cyan-700/70 dark:text-cyan-300/70">
+                      {webDavConfig?.directory ? `目录：${webDavConfig.directory}` : '目录：根目录'}
+                    </div>
+                  </div>
+                )}
+
+                {showWebDavSettingsForm && (
+                <div className="space-y-3">
+                  <input
+                    type="url"
+                    value={webDavUrlInput}
+                    onChange={(e) => setWebDavUrlInput(e.target.value)}
+                    placeholder="WebDAV 地址，如 https://example.com/dav"
+                    className="w-full rounded-2xl border border-cyan-100 bg-white/85 p-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 dark:border-cyan-900/40 dark:bg-slate-900/80 dark:text-slate-100"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={webDavUsernameInput}
+                      onChange={(e) => setWebDavUsernameInput(e.target.value)}
+                      placeholder="用户名"
+                      className="min-w-0 rounded-2xl border border-cyan-100 bg-white/85 p-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 dark:border-cyan-900/40 dark:bg-slate-900/80 dark:text-slate-100"
+                    />
+                    <input
+                      type="password"
+                      value={webDavPasswordInput}
+                      onChange={(e) => setWebDavPasswordInput(e.target.value)}
+                      placeholder={webDavConfig?.password ? '新密码，留空不改' : '应用密码'}
+                      className="min-w-0 rounded-2xl border border-cyan-100 bg-white/85 p-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 dark:border-cyan-900/40 dark:bg-slate-900/80 dark:text-slate-100"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={webDavDirectoryInput}
+                    onChange={(e) => setWebDavDirectoryInput(e.target.value)}
+                    placeholder="远程目录，可留空"
+                    className="w-full rounded-2xl border border-cyan-100 bg-white/85 p-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 dark:border-cyan-900/40 dark:bg-slate-900/80 dark:text-slate-100"
+                  />
+                </div>
+                )}
+
+                {webDavConfigured && !showWebDavSettingsForm && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setIsWebDavActionsOpen((open) => !open);
+                    }}
+                    className="flex w-full items-center justify-between rounded-2xl bg-white/75 px-3 py-2.5 text-xs font-bold text-cyan-800 shadow-sm active:scale-[0.99] dark:bg-slate-900/75 dark:text-cyan-200"
+                  >
+                    <span>WebDAV 操作</span>
+                    <FaIcon name="chevron-down" className={`text-cyan-600 transition-transform ${isWebDavActionsOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+
+                {(showWebDavSettingsForm || isWebDavActionsOpen) && (
+                <div className="grid grid-cols-2 gap-2">
+                  {showWebDavSettingsForm ? (
+                    <button
+                      type="button"
+                      onClick={(e) => runWebDavButtonAction(e, saveWebDavSettings)}
+                      disabled={webDavBusy}
+                      className="rounded-2xl bg-cyan-600 px-3 py-3 text-xs font-bold text-white shadow-sm active:scale-[0.98] disabled:opacity-50"
+                    >
+                      保存配置
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => runWebDavButtonAction(e, () => setIsWebDavSettingsOpen(true))}
+                      disabled={webDavBusy}
+                      className="rounded-2xl bg-white px-3 py-3 text-xs font-bold text-cyan-700 shadow-sm active:scale-[0.98] disabled:opacity-50 dark:bg-slate-900 dark:text-cyan-300"
+                    >
+                      修改配置
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => runWebDavButtonAction(e, onWebDavTest)}
+                    disabled={webDavBusy || !webDavConfig?.url}
+                    className="rounded-2xl bg-white px-3 py-3 text-xs font-bold text-cyan-700 shadow-sm active:scale-[0.98] disabled:opacity-50 dark:bg-slate-900 dark:text-cyan-300"
+                  >
+                    测试连接
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => runWebDavButtonAction(e, onWebDavUpload)}
+                    disabled={webDavBusy || !webDavConfig?.url}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-3 py-3 text-xs font-bold text-white shadow-sm active:scale-[0.98] disabled:opacity-50"
+                  >
+                    <FaIcon name="cloud-arrow-up" />
+                    上传备份
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => runWebDavButtonAction(e, onWebDavOpenBackupList)}
+                    disabled={webDavBusy || !webDavConfig?.url}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-white px-3 py-3 text-xs font-bold text-cyan-700 shadow-sm active:scale-[0.98] disabled:opacity-50 dark:bg-slate-900 dark:text-cyan-300"
+                  >
+                    <FaIcon name="cloud-arrow-down" />
+                    云端备份{webDavBackups.length > 0 ? `(${webDavBackups.length})` : ''}
+                  </button>
+                </div>
+                )}
+
+              </div>
               <button onClick={onClear} className="w-full p-4 flex items-center justify-center gap-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/50 rounded-2xl hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">
                 <FaIcon name="trash-arrow-up" className="text-red-600 dark:text-red-400" />
                 <span className="text-xs font-bold text-red-600 dark:text-red-400">清除所有本地记录</span>

@@ -13,6 +13,8 @@ import {
   faChevronRight,
   faCircleCheck,
   faClock,
+  faCloudArrowDown,
+  faCloudArrowUp,
   faDeleteLeft,
   faFileExport,
   faFileImport,
@@ -28,7 +30,9 @@ import {
   faMoon,
   faPlay,
   faPlus,
+  faRotate,
   faScroll,
+  faServer,
   faShare,
   faShieldHalved,
   faSpinner,
@@ -52,6 +56,8 @@ export type FaIconName =
   | 'chevron-right'
   | 'circle-check'
   | 'clock'
+  | 'cloud-arrow-down'
+  | 'cloud-arrow-up'
   | 'delete-left'
   | 'file-export'
   | 'file-import'
@@ -67,7 +73,9 @@ export type FaIconName =
   | 'moon'
   | 'play'
   | 'plus'
+  | 'rotate'
   | 'scroll'
+  | 'server'
   | 'share'
   | 'shield-halved'
   | 'spinner'
@@ -90,6 +98,8 @@ const ICON_MAP: Record<FaIconName, IconDefinition> = {
   'chevron-right': faChevronRight,
   'circle-check': faCircleCheck,
   clock: faClock,
+  'cloud-arrow-down': faCloudArrowDown,
+  'cloud-arrow-up': faCloudArrowUp,
   'delete-left': faDeleteLeft,
   'file-export': faFileExport,
   'file-import': faFileImport,
@@ -105,7 +115,9 @@ const ICON_MAP: Record<FaIconName, IconDefinition> = {
   moon: faMoon,
   play: faPlay,
   plus: faPlus,
+  rotate: faRotate,
   scroll: faScroll,
+  server: faServer,
   share: faShare,
   'shield-halved': faShieldHalved,
   spinner: faSpinner,
